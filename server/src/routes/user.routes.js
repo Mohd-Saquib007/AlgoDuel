@@ -1,0 +1,19 @@
+const express = require("express");
+
+const auth = require("../middleware/auth.middleware");
+
+const router = express.Router();
+
+router.get("/me", auth, (req, res) => {
+
+    res.json({
+
+        message: "Authorized",
+
+        user: req.user
+
+    });
+
+});
+
+module.exports = router;
