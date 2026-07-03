@@ -1,33 +1,23 @@
 import { useEffect } from "react";
 import { getProblems } from "./api/problem";
+import AppRoutes from "./routes/AppRoutes";
 
 function App() {
+  useEffect(() => {
+    async function fetchProblems() {
+      try {
+        const data = await getProblems();
 
-    useEffect(() => {
+        console.log(data);
+      } catch (err) {
+        console.error(err);
+      }
+    }
 
-        async function fetchProblems() {
+    fetchProblems();
+  }, []);
 
-            try {
-
-                const data = await getProblems();
-
-                console.log(data);
-
-            } catch (err) {
-
-                console.error(err);
-
-            }
-
-        }
-
-        fetchProblems();
-
-    }, []);
-
-    return (
-        <h1>AlgoDuel</h1>
-    );
+  return <AppRoutes />;
 }
 
 export default App;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import { Bell, Code2, Menu, X } from "lucide-react";
 
 import Button from "../ui/Button";
@@ -9,9 +9,17 @@ import ProfileMenu from "./ProfileMenu";
 function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const navigate = useNavigate();
 
-  // Temporary authentication state
-  const isLoggedIn = true;
+  // Dynamic authentication state
+  const isLoggedIn = !!localStorage.getItem("token");
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setMenuOpen(false);
+    navigate("/login");
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -49,14 +57,8 @@ function Navbar() {
       <Container>
         <nav className="flex h-20 items-center justify-between">
           {/* Logo */}
-          <Link
-            to="/"
-            className="flex items-center gap-2"
-          >
-            <Code2
-              size={30}
-              className="text-[#A3FF12]"
-            />
+          <Link to="/" className="flex items-center gap-2">
+            <Code2 size={30} className="text-[#A3FF12]" />
 
             <span className="font-['Sora'] text-2xl font-bold text-white">
               Algo
@@ -86,23 +88,17 @@ function Navbar() {
             {!isLoggedIn ? (
               <>
                 <Link to="/login">
-                  <Button variant="ghost">
-                    Login
-                  </Button>
+                  <Button variant="ghost">Login</Button>
                 </Link>
 
                 <Link to="/register">
-                  <Button>
-                    Register
-                  </Button>
+                  <Button>Register</Button>
                 </Link>
               </>
             ) : (
               <>
                 <Link to="/battle">
-                  <Button>
-                    Start Battle
-                  </Button>
+                  <Button>Start Battle</Button>
                 </Link>
 
                 <button className="relative rounded-full p-2 transition hover:bg-white/10">
@@ -144,37 +140,29 @@ function Navbar() {
             {!isLoggedIn ? (
               <>
                 <Link to="/login">
-                  <Button
-                    variant="ghost"
-                    className="w-full"
-                  >
+                  <Button variant="ghost" className="w-full">
                     Login
                   </Button>
                 </Link>
 
                 <Link to="/register">
-                  <Button className="w-full">
-                    Register
-                  </Button>
+                  <Button className="w-full">Register</Button>
                 </Link>
               </>
             ) : (
               <>
                 <Link to="/battle">
-                  <Button className="w-full">
-                    Start Battle
-                  </Button>
+                  <Button className="w-full">Start Battle</Button>
                 </Link>
 
-                <Link to="/dashboard">
-                  Dashboard
-                </Link>
+                <Link to="/dashboard">Dashboard</Link>
 
-                <Link to="/profile">
-                  Profile
-                </Link>
+                <Link to="/profile">Profile</Link>
 
-                <button className="text-left text-red-400">
+                <button
+                  onClick={handleLogout}
+                  className="text-left text-red-400 hover:text-red-300"
+                >
                   Logout
                 </button>
               </>
