@@ -32,5 +32,5 @@ const testCaseSchema = new mongoose.Schema(
         timestamps: true
     }
 );
-
-module.exports = mongoose.model("TestCase", testCaseSchema);
+const TestCase = mongoose.models.TestCase || mongoose.model('TestCase', testCaseSchema);
+module.exports = TestCase; // (or export default TestCase; depending on your setup)

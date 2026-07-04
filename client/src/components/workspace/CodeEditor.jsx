@@ -1,39 +1,9 @@
-import { useState } from "react";
+import { useContext } from "react";
+import ExecutionContext, { starterCode } from "../../context/ExecutionContext";
 import Editor from "@monaco-editor/react";
 
-const starterCode = {
-  cpp: `#include <bits/stdc++.h>
-using namespace std;
-
-class Solution {
-public:
-    vector<int> twoSum(vector<int>& nums, int target) {
-
-    }
-};`,
-
-  java: `class Solution {
-
-    public int[] twoSum(int[] nums, int target) {
-
-    }
-
-}`,
-
-  python: `class Solution:
-
-    def two_sum(self, nums, target):
-
-        pass`,
-
-  javascript: `function twoSum(nums, target) {
-
-}`,
-};
-
 function CodeEditor() {
-  const [language, setLanguage] = useState("cpp");
-  const [code, setCode] = useState(starterCode.cpp);
+  const { language, setLanguage, code, setCode } = useContext(ExecutionContext);
 
   const handleLanguageChange = (e) => {
     const selectedLanguage = e.target.value;

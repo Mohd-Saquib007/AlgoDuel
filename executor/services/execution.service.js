@@ -1,21 +1,5 @@
-exports.runCpp = async (sourceCode, testCases) => {
+const cppRunner = require("../runners/cpp.runner");
 
-    const results = [];
-
-    for(const testCase of testCases){
-
-        const output = await executeOne(
-            sourceCode,
-            testCase.input
-        );
-
-        results.push({
-            input: testCase.input,
-            expectedOutput: testCase.expectedOutput,
-            actualOutput: output.trim()
-        });
-
-    }
-
-    return results;
-}
+exports.runCpp = async (sourceCode, stdin = "") => {
+    return await cppRunner.executeCpp(sourceCode, stdin);
+};

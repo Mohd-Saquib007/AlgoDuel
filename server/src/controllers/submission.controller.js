@@ -23,17 +23,19 @@ exports.createSubmission = async (req, res) => {
 
         for (const testCase of testCases) {
 
-            const response = await axios.post(
-                "http://localhost:7000/run",
-                {
-                    language,
-                    sourceCode,
-                    stdin: testCase.input
-                }
-            );
+            const executorUrl = process.env.EXECUTOR_URL || "http://localhost:7000";
 
-            const actualOutput = response.data.output.trim();
-            const expectedOutput = testCase.expectedOutput.trim();
+        const response = await axios.post(
+            `${executorUrl}/run`,
+            {
+                language,
+                sourceCode,
+                stdin: testCase.input
+            }
+        );
+
+        const actualOutput = response.data.output.trim();
+        const expectedOutput = testCase.expectedOutput.trim();
 
             if (actualOutput !== expectedOutput) {
                 verdict = "Wrong Answer";
