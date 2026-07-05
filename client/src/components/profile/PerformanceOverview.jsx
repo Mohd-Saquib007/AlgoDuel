@@ -1,160 +1,99 @@
 function ProgressBar({ label, value, percentage, color }) {
   return (
     <div className="mb-6">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="font-medium">{label}</span>
-
-        <span className="text-gray-400">
-          {value}
-        </span>
+      <div className="mb-2 flex items-center justify-between text-sm">
+        <span className="font-semibold text-gray-300">{label}</span>
+        <span className="font-mono text-gray-400">{value}</span>
       </div>
-
-      <div className="h-3 overflow-hidden rounded-full bg-[#1E1E1E]">
+      <div className="h-2.5 overflow-hidden rounded-full bg-[#1E1E1E]">
         <div
           className={`${color} h-full rounded-full transition-all duration-500`}
-          style={{
-            width: `${percentage}%`,
-          }}
+          style={{ width: `${Math.min(percentage, 100)}%` }}
         />
       </div>
     </div>
   );
 }
 
-function PerformanceOverview() {
+function PerformanceOverview({ user }) {
+  // Safely calculate the total language submission counts to compute the dynamic breakdown bar percentages
+  const totalLangSubmissions = (user.languages || []).reduce((acc, curr) => acc + curr.count, 0);
+
+  // Dynamic layout helper maps
+  const langColors = ["bg-[#A3FF12]", "bg-cyan-500", "bg-purple-500", "bg-yellow-500", "bg-blue-500"];
+
   return (
     <div className="mt-10 grid gap-8 lg:grid-cols-2">
-
-      {/* Left */}
-
-      <div className="rounded-3xl border border-white/10 bg-[#252526] p-8">
-
-        <h2 className="text-3xl font-bold">
-          Performance
-        </h2>
-
-        <div className="mt-8 space-y-6">
-
-          <div className="flex justify-between">
-
-            <span className="text-gray-400">
-              Current Rating
-            </span>
-
-            <span className="font-semibold text-[#A3FF12]">
-              1540
-            </span>
-
+      
+      {/* Performance Stats List Card */}
+      <div className="rounded-3xl border border-white/5 bg-[#252526]/40 backdrop-blur-md p-8">
+        <h2 className="text-2xl font-bold tracking-tight">Performance Profile</h2>
+        <div className="mt-8 space-y-6 font-medium text-base">
+          <div className="flex justify-between border-b border-white/5 pb-4">
+            <span className="text-gray-400">Current Arena Rating</span>
+            <span className="font-bold text-[#A3FF12] font-mono">{user.rating}</span>
           </div>
-
-          <div className="flex justify-between">
-
-            <span className="text-gray-400">
-              Highest Rating
-            </span>
-
-            <span className="font-semibold">
-              1620
-            </span>
-
+          <div className="flex justify-between border-b border-white/5 pb-4">
+            <span className="text-gray-400">Highest Rating Achieved</span>
+            <span className="font-bold text-gray-200 font-mono">{user.highestRating}</span>
           </div>
-
-          <div className="flex justify-between">
-
-            <span className="text-gray-400">
-              Global Rank
-            </span>
-
-            <span className="font-semibold">
-              #213
-            </span>
-
+          <div className="flex justify-between border-b border-white/5 pb-4">
+            <span className="text-gray-400">Global Ranking Position</span>
+            <span className="font-bold text-gray-200 font-mono">#{user.globalRank || "---"}</span>
           </div>
-
-          <div className="flex justify-between">
-
-            <span className="text-gray-400">
-              Contests Played
-            </span>
-
-            <span className="font-semibold">
-              18
-            </span>
-
+          <div className="flex justify-between pb-2">
+            <span className="text-gray-400">Competitive Contests Played</span>
+            <span className="font-bold text-gray-200 font-mono">{user.contestsPlayed}</span>
           </div>
-
         </div>
-
       </div>
 
-      {/* Right */}
-
-      <div className="rounded-3xl border border-white/10 bg-[#252526] p-8">
-
-        <h2 className="text-3xl font-bold">
-          Problem Breakdown
-        </h2>
-
+      {/* Problem Breakdown Dynamic Progress Bars */}
+      <div className="rounded-3xl border border-white/5 bg-[#252526]/40 backdrop-blur-md p-8">
+        <h2 className="text-2xl font-bold tracking-tight">Problem Difficulty Breakdown</h2>
         <div className="mt-8">
-
           <ProgressBar
             label="Easy"
-            value="60"
-            percentage={100}
+            value={user.breakdown?.easy || 0}
+            percentage={user.breakdown?.easy ? (user.breakdown.easy / user.problemsSolved) * 100 : 0}
             color="bg-green-500"
           />
-
           <ProgressBar
             label="Medium"
-            value="45"
-            percentage={75}
+            value={user.breakdown?.medium || 0}
+            percentage={user.breakdown?.medium ? (user.breakdown.medium / user.problemsSolved) * 100 : 0}
             color="bg-yellow-500"
           />
-
           <ProgressBar
             label="Hard"
-            value="22"
-            percentage={35}
+            value={user.breakdown?.hard || 0}
+            percentage={user.breakdown?.hard ? (user.breakdown.hard / user.problemsSolved) * 100 : 0}
             color="bg-red-500"
           />
-
         </div>
-
       </div>
 
-      {/* Languages */}
-
-      <div className="rounded-3xl border border-white/10 bg-[#252526] p-8 lg:col-span-2">
-
-        <h2 className="text-3xl font-bold">
-          Languages Used
-        </h2>
-
+      {/* Languages Array Progress Section */}
+      <div className="rounded-3xl border border-white/5 bg-[#252526]/40 backdrop-blur-md p-8 lg:col-span-2">
+        <h2 className="text-2xl font-bold tracking-tight">Languages Utilized</h2>
         <div className="mt-8">
-
-          <ProgressBar
-            label="C++"
-            value="70%"
-            percentage={70}
-            color="bg-[#A3FF12]"
-          />
-
-          <ProgressBar
-            label="Python"
-            value="20%"
-            percentage={20}
-            color="bg-cyan-500"
-          />
-
-          <ProgressBar
-            label="JavaScript"
-            value="10%"
-            percentage={10}
-            color="bg-purple-500"
-          />
-
+          {user.languages && user.languages.length > 0 ? (
+            user.languages.map((lang, idx) => {
+              const percentage = totalLangSubmissions > 0 ? ((lang.count / totalLangSubmissions) * 100).toFixed(0) : 0;
+              return (
+                <ProgressBar
+                  key={lang.name}
+                  label={lang.name}
+                  value={`${percentage}% (${lang.count} submissions)`}
+                  percentage={parseFloat(percentage)}
+                  color={langColors[idx % langColors.length]}
+                />
+              );
+            })
+          ) : (
+            <p className="text-gray-500 text-sm">No code language data points found.</p>
+          )}
         </div>
-
       </div>
 
     </div>

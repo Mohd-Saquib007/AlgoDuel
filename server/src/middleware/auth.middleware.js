@@ -13,25 +13,35 @@ module.exports = async (req, res, next) => {
         }
 
         const token = authHeader.split(" ")[1];
-
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-        const user = await User.findById(decoded.id).select("-password");
+        // FIXED: Explicitly fallback to checking both decoded property names
+        const targetUserId = decoded.id || decoded._id;
+
+        if (!targetUserId) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid token payload structure"
+            });
+        }
+
+        const user = await User.findById(targetUserId).select("-password");
 
         if (!user) {
             return res.status(401).json({
                 success: false,
-                message: "User not found"
+                message: "User account no longer exists in database"
             });
         }
 
+        // Attach user schema parameters cleanly to your request context pipeline
         req.user = user;
-
         next();
     } catch (error) {
+        console.error("Auth Middleware Error:", error.message);
         return res.status(401).json({
             success: false,
-            message: "Invalid or expired token"
+            message: "Invalid or expired token signature"
         });
     }
 };
