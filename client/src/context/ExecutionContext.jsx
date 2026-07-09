@@ -13,17 +13,13 @@ public:
 };`,
 
   java: `class Solution {
-
     public int[] twoSum(int[] nums, int target) {
 
     }
-
 }`,
 
   python: `class Solution:
-
     def two_sum(self, nums, target):
-
         pass`,
 
   javascript: `function twoSum(nums, target) {
@@ -35,7 +31,6 @@ const STORAGE_KEY = "algoduel:workspace";
 
 const readStoredWorkspace = () => {
   if (typeof window === "undefined") return null;
-
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     return stored ? JSON.parse(stored) : null;
@@ -71,14 +66,16 @@ export const ExecutionProvider = ({ children }) => {
     setResult(null);
   }, [language]);
 
+  // FIXED: Destructures problemSlug from call signature arguments cleanly
   const run = useCallback(
-    async ({ stdin = "" } = {}) => {
+    async ({ stdin = "", problemSlug = "" } = {}) => {
       setLoading(true);
       try {
         const payload = {
           language,
           sourceCode: code,
           stdin,
+          problemSlug, // FIXED: Sent straight down to the Port 5000 API controller body
         };
 
         const res = await apiRunCode(payload);

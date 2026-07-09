@@ -1,97 +1,215 @@
-const pistonService = require("../services/piston.service");
+const axios = require("axios");
 const Problem = require("../models/problem.model");
 const TestCase = require("../models/testcase.model");
+const PistonService = require("../services/piston.service");
 
-const prepareCppSource = (sourceCode) => {
-    const trimmed = (sourceCode || "").trim();
-    const hasInclude = /#\s*include/.test(trimmed);
-    const prefix = hasInclude ? "" : "#include <bits/stdc++.h>\nusing namespace std;\n\n";
-    const sourceWithIncludes = `${prefix}${trimmed}`;
-    if (/\b(?:int|void)\s+main\s*\(/m.test(sourceWithIncludes)) {
-        return sourceWithIncludes;
+// JavaScript Pre-compiler Stream Sanitizer
+const serializeStdinForCpp = (inputStr, params) => {
+    console.log("\n🧪 [DEBUG] Entering serializeStdinForCpp with input:", JSON.stringify(inputStr));
+    if (!inputStr || String(inputStr).trim() === "") return "";
+    let cleanStr = inputStr.trim();
+
+    const hasVector = params.some(p => p.type.startsWith("vector"));
+
+    if (hasVector) {
+        // Isolate the bracket block elements
+        const arrayMatch = cleanStr.match(/\[(.*?)\]/);
+        if (arrayMatch) {
+            const elements = arrayMatch[1].split(",").map(x => x.trim()).filter(x => x !== "");
+            
+            // Isolate trailing target variable properties
+            const targetMatch = cleanStr.match(/(?:target\s*=\s*)?(-?\d+)\s*$/);
+            const targetVal = targetMatch ? targetMatch[1] : "";
+
+            // Format standard input stream structure: [Length] [Array Elements] [Scalar Value]
+            const formatted = `${elements.length}\n${elements.join(" ")}\n${targetVal}`.trim();
+            console.log("👉 [DEBUG] Vector Problem Serialized Input Stream:\n", JSON.stringify(formatted));
+            return formatted;
+        }
     }
-    return `${sourceWithIncludes}\n\nint main() { return 0; }\n`;
+
+    // Isolate single string values (like Valid Parentheses) from variable labels and quotes
+    let stringClean = cleanStr.replace(/^(s|input)\s*=\s*/i, "");
+    stringClean = stringClean.replace(/^["']|["']$/g, "");
+    console.log("👉 [DEBUG] Primitive Problem Serialized Input Stream:", JSON.stringify(stringClean));
+    return stringClean.trim();
 };
 
-const buildCppHarness = (sourceCode, input) => {
-    const trimmedSource = (sourceCode || "").trim();
-    const hasInclude = /#\s*include/.test(trimmedSource);
-    const prefix = hasInclude ? "" : "#include <iostream>\n#include <vector>\n#include <map>\n#include <string>\n#include <sstream>\nusing namespace std;\n\n";
-    const sourceWithIncludes = `${prefix}${trimmedSource}`;
-
-    const numsTargetMatch = input.match(/nums\s*=\s*\[(.*?)\].*target\s*=\s*(-?\d+)/is);
-    if (numsTargetMatch) {
-        const nums = numsTargetMatch[1]
-            .split(/\s*,\s*/)
-            .filter((entry) => entry.length)
-            .join(", ");
-        const target = numsTargetMatch[2];
-
-        return `${sourceWithIncludes}\n\nint main() {\n  vector<int> nums = { ${nums} };\n  int target = ${target};\n  Solution sol;\n  auto result = sol.twoSum(nums, target);\n  cout << "[";\n  for (size_t i = 0; i < result.size(); ++i) { if (i) cout << ","; cout << result[i]; }\n  cout << "]";\n  return 0;\n}\n`;
+// Universal C++ Execution Driver Template Generator Engine
+const generateUniversalCppHarness = (userSolutionCode, problemDoc) => {
+    if (!problemDoc || !problemDoc.harnessConfig) {
+        return userSolutionCode;
     }
 
-    return `${sourceWithIncludes}\n\nint main() {\n  cerr << "Unable to auto-generate harness for this test case." << endl;\n  return 0;\n}\n`;
+    const { returnType, functionName, params } = problemDoc.harnessConfig;
+    const trimmedSource = (userSolutionCode || "").trim();
+    
+    // Pristine headers including both standard structures and optimized structures
+    const globalHeaders = "#include <iostream>\n#include <vector>\n#include <map>\n#include <string>\n#include <stack>\n#include <unordered_map>\n#include <sstream>\n#include <algorithm>\nusing namespace std;\n\n";
+
+    let paramDeclarations = "";
+    let streamInputs = "";
+    let functionArgs = [];
+
+    params.forEach((param) => {
+        paramDeclarations += `    ${param.type} ${param.name};\n`;
+        functionArgs.push(param.name);
+
+        if (param.type.startsWith("vector")) {
+            // Read array lengths cleanly before indexing elements sequentially
+            streamInputs += `
+    int size_${param.name};
+    if (cin >> size_${param.name}) {
+        ${param.name}.resize(size_${param.name});
+        for (int i = 0; i < size_${param.name}; ++i) {
+            cin >> ${param.name}[i];
+        }
+    }\n`;
+        } else {
+            streamInputs += `    cin >> ${param.name};\n`;
+        }
+    });
+
+    let outputFormatter = "";
+    if (returnType.startsWith("vector")) {
+        outputFormatter = `
+    cout << "[";
+    for (size_t i = 0; i < result.size(); ++i) {
+        if (i > 0) cout << ",";
+        cout << result[i];
+    }
+    cout << "]";`;
+    } else if (returnType === "bool") {
+        outputFormatter = `    cout << (result ? "true" : "false");\n`;
+    } else {
+        outputFormatter = `    cout << result;\n`;
+    }
+
+    const completeHarness = `${globalHeaders}\n${trimmedSource}\n\nint main() {
+    ios_base::sync_with_stdio(false);
+    cin.tie(NULL);
+${paramDeclarations}
+${streamInputs}
+    Solution sol;
+    ${returnType} result = sol.${functionName}(${functionArgs.join(", ")});
+${outputFormatter}
+    return 0;
+}`;
+
+    console.log("\n🛠️ [DEBUG] Auto-Generated Full C++ Driver Compilation Code Harness:");
+    console.log("------------------------------------------------------------------");
+    console.log(completeHarness);
+    console.log("------------------------------------------------------------------\n");
+    return completeHarness;
 };
 
 exports.runCode = async (req, res) => {
     try {
-        const { language, sourceCode, stdin } = req.body;
+        const { language, sourceCode, stdin, problemSlug } = req.body;
+        console.log("\n📥 [DEBUG] Incoming Request Body parameters map properties:", { language, problemSlug, stdinLength: stdin?.length });
 
         if (!language || !sourceCode) {
             return res.status(400).json({ success: false, message: "Language and sourceCode are required" });
         }
 
-        // Build the compilation harness just like runProblemTests does
+        const problem = await Problem.findOne({ slug: problemSlug || "two-sum" }).lean();
+        console.log("🔍 [DEBUG] Database Lookup Result document matching slug token:", problem ? `Found: ${problem.title}` : "NOT FOUND / NULL");
+
         const hasMain = /\b(?:int|void)\s+main\s*\(/m.test(sourceCode);
-        const compiledSource = (language === "cpp" && !hasMain) 
-            ? buildCppHarness(sourceCode, stdin || "nums = [2,7,11,15] target = 9") 
-            : sourceCode;
+
+        let compiledSource = sourceCode;
+        let serializedStdin = stdin || "";
+
+        if (language === "cpp" && !hasMain && problem && problem.harnessConfig) {
+            compiledSource = generateUniversalCppHarness(sourceCode, problem);
+            serializedStdin = serializeStdinForCpp(stdin, problem.harnessConfig.params);
+        }
 
         try {
-            const result = await pistonService.executeCode(language, compiledSource, stdin || "");
-            return res.json({ success: true, run: result.run || { output: result } });
-        } catch (pistonError) {
-            console.warn("Piston execution failed, falling back to local runner:", pistonError.message);
-            if (language === "cpp") {
-                try {
-                    const cppRunner = require("../../../executor/runners/cpp.runner");
-                    // Pass the complete harness source with standard wrappers injected
-                    const localResult = await cppRunner.executeCpp(compiledSource, stdin || "");
-                    
-                    if (localResult.error) {
-                        return res.status(200).json({ 
-                            success: true, // Set to true so the frontend loads the metrics box instead of dropping to generic failure text
-                            run: {
-                                status: "Compile Error",
-                                output: localResult.stderr || localResult.error,
-                                time: "0 ms",
-                                memory: "0 MB"
-                            }
-                        });
-                    }
+            console.log("⚡ [DEBUG] Dispatching tracking pass execution over to PistonService...");
+            const result = await PistonService.executeCode(language, compiledSource, serializedStdin);
+            
+            console.log("📦 [DEBUG] Piston Service Raw Returned Object Payload Struct:\n", JSON.stringify(result, null, 2));
 
-                    const actualOutput = (localResult.stdout || "").trim();
-                    const targetStatus = actualOutput === "[0,1]" ? "Accepted" : "Wrong Answer";
+            let processedOutput = "";
+            let finalStatus = "Executed";
 
-                    return res.json({ 
-                        success: true, 
-                        run: { 
-                            status: targetStatus,
-                            output: actualOutput, 
-                            time: `${localResult.durationMs || 12} ms`,
-                            memory: `${(Math.random() * (4.2 - 3.6) + 3.6).toFixed(1)} MB`
-                        } 
-                    });
-                } catch (localErr) {
-                    console.error("Local runner error:", localErr.message);
-                    return res.status(500).json({ success: false, message: localErr.message || "Local execution failed" });
+            if (result && result.run) {
+                if (result.run.stderr && result.run.stderr.trim() !== "") {
+                    processedOutput = result.run.stderr.trim();
+                    finalStatus = "Runtime Error";
+                } else {
+                    processedOutput = result.run.stdout || result.run.output || "";
                 }
+            } else if (result) {
+                processedOutput = result.output || result.stdout || JSON.stringify(result);
             }
-            throw pistonError;
+
+            return res.json({ 
+                success: true, 
+                run: { 
+                    status: finalStatus, 
+                    output: String(processedOutput).trim(), 
+                    time: result?.run?.time || "12 ms", 
+                    memory: result?.run?.memory || "4.0 MB" 
+                } 
+            });
+
+        } catch (pistonError) {
+            console.warn("\n❌ [DEBUG] Piston Service Error Catch Triggered. Reason:", pistonError.message);
+            console.log("Cascading code payload processing immediately down to Port 7000 Sandbox microservice...");
+            
+            try {
+                const executorUrl = process.env.EXECUTOR_URL || "http://localhost:7000";
+                console.log(`🌐 [DEBUG] Hitting local sandbox microservice endpoint route: ${executorUrl}/run`);
+                
+                const response = await axios.post(`${executorUrl}/run`, {
+                    language,
+                    sourceCode: compiledSource,
+                    stdin: serializedStdin
+                });
+                
+                console.log("📦 [DEBUG] Port 7000 Sandbox Microservice Local Raw Response Payload Structure:\n", JSON.stringify(response.data, null, 2));
+                
+                const sandboxData = response.data?.run || response.data || {};
+                let sandboxOutput = sandboxData.output || sandboxData.stdout || "";
+                let sandboxStatus = sandboxData.status || "Executed";
+
+                // ROBUST LAYER EXTRACTOR: If sandbox returns structural stderr errors, bubble them up safely
+                if (sandboxData.stderr && sandboxData.stderr.trim() !== "") {
+                    sandboxOutput = sandboxData.stderr.trim();
+                    sandboxStatus = "Runtime Error";
+                } else if (typeof sandboxOutput === "string" && sandboxOutput.toLowerCase().includes("runtime error")) {
+                    sandboxStatus = "Runtime Error";
+                }
+                
+                return res.json({ 
+                    success: true, 
+                    run: { 
+                        status: sandboxStatus, 
+                        output: String(sandboxOutput || "Execution finished.").trim(),
+                        time: sandboxData.time || "14 ms",
+                        memory: sandboxData.memory || "3.8 MB"
+                    } 
+                });
+            } catch (axiosError) {
+                console.error("\n💥 [DEBUG] Port 7000 Isolation Subprocess Execution Failed completely:");
+                console.error("Message:", axiosError.message);
+
+                return res.status(200).json({
+                    success: true,
+                    run: {
+                        status: "Runtime Error",
+                        output: `Both sandbox execution routes are offline. Local Runner Exception: ${axiosError.message}`,
+                        time: "0 ms",
+                        memory: "0 MB"
+                    }
+                });
+            }
         }
     } catch (error) {
-        console.error("Execution error:", error.message);
-        res.status(500).json({ success: false, message: error.message || "Code execution failed" });
+        console.error("🔥 [DEBUG] Top-level Controller Route Exception Trapped:", error.message);
+        res.status(500).json({ success: false, message: error.message });
     }
 };
 
@@ -105,85 +223,59 @@ exports.runProblemTests = async (req, res) => {
 
         const query = problemId ? { _id: problemId } : { slug: problemSlug };
         const problem = await Problem.findOne(query).lean();
-        if (!problem) {
-            return res.status(404).json({ success: false, message: "Problem not found" });
-        }
+        if (!problem) return res.status(404).json({ success: false, message: "Problem not found" });
 
         const testCases = await TestCase.find({ problem: problem._id }).sort({ order: 1 });
-        if (!testCases.length) {
-            return res.status(404).json({ success: false, message: "No test cases found for this problem." });
-        }
+        if (!testCases.length) return res.status(404).json({ success: false, message: "No test cases configured." });
 
         const perTestResults = [];
         let verdict = "Accepted";
-
-        const isCpp = language === "cpp";
         const hasMain = /\b(?:int|void)\s+main\s*\(/m.test(sourceCode);
 
         for (const testCase of testCases) {
-            const testResult = {
-                id: testCase._id,
-                input: testCase.input,
-                expectedOutput: testCase.expectedOutput,
-                actualOutput: null,
-                status: "Unknown",
-                stderr: null,
-            };
-
+            const testResult = { id: testCase._id, input: testCase.input, expectedOutput: testCase.expectedOutput, actualOutput: null, status: "Unknown", stderr: null };
+            
             try {
+                const harnessSource = (language === "cpp" && !hasMain && problem && problem.harnessConfig) ? generateUniversalCppHarness(sourceCode, problem) : sourceCode;
+                const serializedStdin = (language === "cpp" && !hasMain && problem && problem.harnessConfig) ? serializeStdinForCpp(testCase.input, problem.harnessConfig.params) : testCase.input;
+                
                 let response;
-                if (isCpp && !hasMain) {
-                    const harnessSource = buildCppHarness(sourceCode, testCase.input);
-                    try {
-                        response = await pistonService.executeCode("cpp", harnessSource, "");
-                    } catch (pistonError) {
-                        const cppRunner = require("../../../executor/runners/cpp.runner");
-                        const localResult = await cppRunner.executeCpp(harnessSource, "");
-                        if (localResult.error) {
-                            throw new Error(localResult.stderr || localResult.error || "Local execution failed");
-                        }
-                        response = { run: { output: localResult.stdout || "" } };
-                    }
-                } else {
-                    try {
-                        response = await pistonService.executeCode(language, sourceCode, testCase.input);
-                    } catch (pistonError) {
-                        if (language === "cpp") {
-                            const cppRunner = require("../../../executor/runners/cpp.runner");
-                            const localResult = await cppRunner.executeCpp(sourceCode, testCase.input);
-                            if (localResult.error) {
-                                throw new Error(localResult.stderr || localResult.error || "Local execution failed");
-                            }
-                            response = { run: { output: localResult.stdout || "" } };
-                        } else {
-                            throw pistonError;
-                        }
-                    }
+                try {
+                    response = await PistonService.executeCode(language, harnessSource, serializedStdin);
+                } catch (err) {
+                    const executorUrl = process.env.EXECUTOR_URL || "http://localhost:7000";
+                    response = await axios.post(`${executorUrl}/run`, { language, sourceCode: harnessSource, stdin: serializedStdin });
                 }
 
-                const actualOutput = (response.run?.output || "").trim();
-                testResult.actualOutput = actualOutput;
-                if (actualOutput === testCase.expectedOutput.trim()) {
-                    testResult.status = "Passed";
+                const runPayload = response.run || response.data?.run || response.data || response;
+                let actualOutput = "";
+
+                if (runPayload.stderr && runPayload.stderr.trim() !== "") {
+                    actualOutput = runPayload.stderr.trim();
+                    testResult.status = "Runtime Error";
+                    testResult.stderr = actualOutput;
+                    verdict = "Runtime Error";
                 } else {
-                    testResult.status = "Failed";
-                    verdict = "Wrong Answer";
+                    actualOutput = String(runPayload.stdout || runPayload.output || "").trim();
+                    testResult.actualOutput = actualOutput;
+
+                    if (actualOutput === testCase.expectedOutput.trim()) {
+                        testResult.status = "Passed";
+                    } else {
+                        testResult.status = "Failed";
+                        verdict = "Wrong Answer";
+                    }
                 }
             } catch (testError) {
                 testResult.status = "Runtime Error";
                 testResult.stderr = testError.message;
                 if (verdict === "Accepted") verdict = "Runtime Error";
             }
-
             perTestResults.push(testResult);
-            if (verdict !== "Accepted") {
-                break;
-            }
+            if (verdict !== "Accepted") break;
         }
-
         return res.json({ success: true, verdict, results: perTestResults });
     } catch (error) {
-        console.error("Run problem tests error:", error.message);
-        res.status(500).json({ success: false, message: error.message || "Test execution failed" });
+        res.status(500).json({ success: false, message: error.message });
     }
 };

@@ -1,6 +1,6 @@
 const fs = require("fs/promises");
 const path = require("path");
-const { execFile } = require("child_process");
+const { exec } = require("child_process");
 const { v4: uuidv4 } = require("uuid");
 
 const TMP_DIR = path.join(__dirname, "..", "temp");
@@ -10,14 +10,11 @@ const writeFile = async (filePath, content) => {
   await fs.writeFile(filePath, content, "utf8");
 };
 
-const execFileWithStdin = (file, args, options, stdinContent = "") => {
+const executeShellCommand = (command, stdinContent = "") => {
   return new Promise((resolve, reject) => {
-    // Start high-resolution time calculation
     const startTime = process.hrtime();
-
-    const child = execFile(file, args, options, (error, stdout, stderr) => {
+    const child = exec(command, { timeout: 10000 }, (error, stdout, stderr) => {
       const diff = process.hrtime(startTime);
-      // Convert high-res nanoseconds directly to milliseconds
       const durationMs = ((diff[0] * 1e9 + diff[1]) / 1e6).toFixed(0);
 
       if (error) {
@@ -39,107 +36,35 @@ const hasMainFunction = (sourceCode) => {
 
 const prepareSourceCode = (sourceCode) => {
   const trimmed = (sourceCode || "").trim();
-
-  if (!trimmed) {
-    return `#include <iostream>\nint main() { return 0; }\n`;
-  }
-
-  if (hasMainFunction(trimmed)) {
-    return trimmed;
-  }
-
-  return `
-#include <iostream>
-#include <vector>
-#include <map>
-#include <string>
-#include <sstream>
-#include<bits/stdc++.h>
-
-using namespace std;
-
-${trimmed}
-
-int main() {
-    string token;
-    string fullInput = "";
-    
-    while (cin >> token) {
-        fullInput += token + " ";
-    }
-
-    for (char &c : fullInput) {
-        if (c == '[' || c == ']' || c == ',' || c == '=') {
-            c = ' ';
-        }
-    }
-
-    stringstream ss(fullInput);
-    string word;
-    vector<int> nums;
-    int target = 0;
-    bool readingNums = false;
-
-    while (ss >> word) {
-        if (word == "nums") {
-            readingNums = true;
-            continue;
-        }
-        if (word == "target") {
-            readingNums = false;
-            ss >> target;
-            continue;
-        }
-        if (readingNums) {
-            stringstream numStream(word);
-            int val;
-            if (numStream >> val) {
-                nums.push_back(val);
-            }
-        }
-    }
-
-    Solution solver;
-    vector<int> res = solver.twoSum(nums, target);
-    if(res.size() == 2) {
-        cout << "[" << res[0] << "," << res[1] << "]";
-    } else {
-        cout << "[]";
-    }
-    return 0;
-}
-`;
+  if (!trimmed) return `#include <iostream>\nint main() { return 0; }\n`;
+  return trimmed; // Returns the injected harness verbatim
 };
 
 const executeCpp = async (sourceCode, stdin = "") => {
   const id = uuidv4();
-  const codePath = path.join(TMP_DIR, id, "Main.cpp");
-  const binaryPath = path.join(TMP_DIR, id, "Main.exe"); 
+  const folderPath = path.join(TMP_DIR, id);
+  const codePath = path.join(folderPath, "Main.cpp");
+  const binaryPath = path.join(folderPath, "Main.exe");
 
   const preparedSource = prepareSourceCode(sourceCode);
-
   await writeFile(codePath, preparedSource);
 
+  const compileCmd = `g++ "${codePath}" -o "${binaryPath}"`;
+  const runCmd = `"${binaryPath}"`;
+
   try {
-    await execFileWithStdin("g++", [codePath, "-o", binaryPath], {
-      cwd: path.dirname(codePath),
-      timeout: 10000,
-    });
+    await executeShellCommand(compileCmd);
   } catch (compileError) {
     return { 
       error: "Compilation Error",
       stdout: "", 
-      stderr: `Compilation Failed: ${compileError.stderr || compileError.error?.message || "Check GCC path variables."}`,
+      stderr: `Compilation Failed:\n${compileError.stderr || compileError.message}`,
       durationMs: 0
     };
   }
 
   try {
-    const { stdout, stderr, durationMs } = await execFileWithStdin(binaryPath, [], {
-      cwd: path.dirname(binaryPath),
-      timeout: 5000,
-    }, stdin);
-
+    const { stdout, stderr, durationMs } = await executeShellCommand(runCmd, stdin);
     return {
       error: null,
       stdout: stdout.toString().trim(),
@@ -150,12 +75,14 @@ const executeCpp = async (sourceCode, stdin = "") => {
     return { 
       error: "Runtime Error",
       stdout: "", 
-      stderr: `Runtime Error: ${runtimeError.stderr || runtimeError.error?.message}`,
+      stderr: `Runtime Error:\n${runtimeError.stderr || runtimeError.message}`,
       durationMs: runtimeError.durationMs || 0
     };
+  } finally {
+    setTimeout(async () => {
+      try { await fs.rm(folderPath, { recursive: true, force: true }); } catch (e) {}
+    }, 5000);
   }
 };
 
-module.exports = {
-  executeCpp,
-};
+module.exports = { executeCpp };
