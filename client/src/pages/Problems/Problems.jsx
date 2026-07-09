@@ -1,88 +1,60 @@
-import { useMemo, useState } from "react";
+import { useState, useEffect, useMemo } from "react";
+import axios from "axios";
 import SearchFilter from "../../components/problems/SearchFilter";
 import ProblemCard from "../../components/problems/ProblemCard";
 
-// FIXED: Added URL-safe slug fields to every problem item object
-const problems = [
-  {
-    slug: "two-sum",
-    title: "Two Sum",
-    difficulty: "Easy",
-    topic: "Array",
-    acceptance: "52%",
-    description: "Find two numbers in an array whose sum equals the target value.",
-  },
-  {
-    slug: "binary-search",
-    title: "Binary Search",
-    difficulty: "Easy",
-    topic: "Binary Search",
-    acceptance: "56%",
-    description: "Implement efficient binary search on a sorted array.",
-  },
-  {
-    slug: "longest-increasing-subsequence",
-    title: "Longest Increasing Subsequence",
-    difficulty: "Medium",
-    topic: "Dynamic Programming",
-    acceptance: "43%",
-    description: "Find the length of the longest strictly increasing subsequence.",
-  },
-  {
-    slug: "number-of-islands",
-    title: "Number of Islands",
-    difficulty: "Medium",
-    topic: "Graph",
-    acceptance: "61%",
-    description: "Count the number of islands in a 2D grid using DFS or BFS.",
-  },
-  {
-    slug: "merge-k-sorted-lists",
-    title: "Merge K Sorted Lists",
-    difficulty: "Hard",
-    topic: "Linked List",
-    acceptance: "39%",
-    description: "Merge multiple sorted linked lists into one sorted list.",
-  },
-];
-
 function Problems() {
+  const [problems, setProblems] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [difficulty, setDifficulty] = useState("All");
   const [topic, setTopic] = useState("All");
 
-  const topics = [
-    "All",
-    ...new Set(problems.map((problem) => problem.topic)),
-  ];
+  // Fetch all problems dynamically from the database
+  useEffect(() => {
+    const fetchProblems = async () => {
+      try {
+        const res = await axios.get("http://localhost:5000/api/problems");
+        if (res.data && res.data.problems) {
+          setProblems(res.data.problems);
+        } else if (res.data && res.data.data) {
+          setProblems(res.data.data);
+        }
+      } catch (err) {
+        console.error("Failed to load backend problems index:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchProblems();
+  }, []);
+
+  const topics = useMemo(() => {
+    return ["All", ...new Set(problems.map((problem) => problem.topic || "General"))];
+  }, [problems]);
 
   const filteredProblems = useMemo(() => {
     return problems.filter((problem) => {
-      const matchesSearch = problem.title
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase());
-
-      const matchesDifficulty =
-        difficulty === "All" ||
-        problem.difficulty === difficulty;
-
-      const matchesTopic =
-        topic === "All" ||
-        problem.topic === topic;
-
-      return (
-        matchesSearch &&
-        matchesDifficulty &&
-        matchesTopic
-      );
+      const matchesSearch = problem.title?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesDifficulty = difficulty === "All" || problem.difficulty === difficulty;
+      const matchesTopic = topic === "All" || problem.topic === topic;
+      return matchesSearch && matchesDifficulty && matchesTopic;
     });
-  }, [searchTerm, difficulty, topic]);
+  }, [problems, searchTerm, difficulty, topic]);
 
   const clearFilters = () => {
     setSearchTerm("");
     setDifficulty("All");
     setTopic("All");
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#1E1E1E] text-white">
+        <div className="text-xl font-medium tracking-wide animate-pulse">Loading Arena Challenges...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#1E1E1E] px-6 py-10 text-white">
@@ -122,7 +94,7 @@ function Problems() {
           {filteredProblems.length > 0 ? (
             filteredProblems.map((problem) => (
               <ProblemCard
-                key={problem.slug}
+                key={problem.slug || problem._id}
                 {...problem}
               />
             ))

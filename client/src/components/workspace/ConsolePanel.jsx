@@ -1,21 +1,42 @@
-import { useState, useContext } from "react";
+import { useState, useEffect, useContext } from "react";
+import axios from "axios";
 import ExecutionContext from "../../context/ExecutionContext";
 
-const sampleInput = `nums = [2,7,11,15]\ntarget = 9`;
-const expectedOutput = `[0,1]`;
-
-function ConsolePanel() {
+function ConsolePanel({ problemSlug }) {
   const [activeTab, setActiveTab] = useState("testcase");
+  const [sampleInput, setSampleInput] = useState("");
+  const [expectedOutput, setExpectedOutput] = useState("");
   const { result } = useContext(ExecutionContext);
 
-  // Safely extract run-level properties from our server controller response structure
+  useEffect(() => {
+    const fetchSampleTestCase = async () => {
+      if (!problemSlug) return;
+      try {
+        const res = await axios.get(`http://localhost:5000/api/problems/${problemSlug}`);
+        const problemData = res.data?.data || res.data;
+        if (problemData) {
+          // If examples array exists, load the first entry, else map fallbacks
+          if (problemData.examples && problemData.examples.length > 0) {
+            setSampleInput(problemData.examples[0].input || "");
+            setExpectedOutput(problemData.examples[0].output || "");
+          } else {
+            setSampleInput(problemData.example ? problemData.example : "No sample input defined.");
+            setExpectedOutput("No expected output defined.");
+          }
+        }
+      } catch (err) {
+        console.error("Failed to sync example metrics fields:", err);
+      }
+    };
+    fetchSampleTestCase();
+  }, [problemSlug]);
+
   const runData = result?.run || null;
   const status = runData?.status || null;
   const outputText = runData?.output || "";
   const runtime = runData?.time || "--";
   const memory = runData?.memory || "--";
 
-  // Match the status styles dynamically
   const getStatusColor = (statusText) => {
     if (statusText === "Accepted") return "text-[#2cbb5d]";
     if (statusText === "Wrong Answer") return "text-[#ef4743]";
@@ -57,14 +78,14 @@ function ConsolePanel() {
             <h3 className="text-sm font-semibold text-gray-200">Sample Test Case</h3>
             <div className="mt-4">
               <p className="text-xs text-gray-400 font-medium">Input</p>
-              <pre className="mt-2 rounded-xl bg-[#1E1E1E] p-4 text-sm font-mono text-gray-300 border border-white/5">
+              <pre className="mt-2 rounded-xl bg-[#1E1E1E] p-4 text-sm font-mono text-gray-300 border border-white/5 whitespace-pre-wrap">
                 {sampleInput}
               </pre>
             </div>
 
             <div className="mt-5">
               <p className="text-xs text-gray-400 font-medium">Expected Output</p>
-              <pre className="mt-2 rounded-xl bg-[#1E1E1E] p-4 text-sm font-mono text-gray-300 border border-white/5">
+              <pre className="mt-2 rounded-xl bg-[#1E1E1E] p-4 text-sm font-mono text-gray-300 border border-white/5 whitespace-pre-wrap">
                 {expectedOutput}
               </pre>
             </div>
@@ -80,8 +101,7 @@ function ConsolePanel() {
               )}
             </div>
 
-            {/* Main Code Output Log Window */}
-            <div className="mt-4 rounded-xl bg-[#1E1E1E] p-4 border border-white/5 min-h-60px">
+            <div className="mt-4 rounded-xl bg-[#1E1E1E] p-4 border border-white/5 min-h-[60px]">
               {result !== null ? (
                 <div>
                   <p className="text-xs text-gray-400 font-medium mb-2">Your Output</p>
@@ -96,7 +116,6 @@ function ConsolePanel() {
               )}
             </div>
 
-            {/* Dynamic Metric Dashboard Cards Grid */}
             <div className="mt-5 grid grid-cols-2 gap-4">
               <div className="rounded-xl bg-[#1E1E1E] p-4 border border-white/5">
                 <p className="text-xs text-gray-400 font-medium">Runtime</p>
