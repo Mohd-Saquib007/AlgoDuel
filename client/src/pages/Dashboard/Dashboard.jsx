@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
 import { BookOpen, Swords, Trophy } from "lucide-react";
 import StatCard from "../../components/dashboard/StatCard";
 import QuickActionCard from "../../components/dashboard/QuickActionCard";
@@ -5,152 +8,126 @@ import DailyChallengeCard from "../../components/dashboard/DailyChallengeCard";
 
 function getGreeting() {
   const hour = new Date().getHours();
-
   if (hour >= 5 && hour < 12) {
-    return {
-      greeting: "Good Morning",
-      emoji: "🌅",
-      message:
-        "Start your day by solving a challenge and building your streak.",
-    };
+    return { greeting: "Good Morning", emoji: "🌅", message: "Start your day by solving a challenge and building your streak." };
   }
-
   if (hour >= 12 && hour < 17) {
-    return {
-      greeting: "Good Afternoon",
-      emoji: "🌤️",
-      message:
-        "Take on a coding battle and sharpen your problem-solving skills.",
-    };
+    return { greeting: "Good Afternoon", emoji: "🌤️", message: "Take on a coding battle and sharpen your problem-solving skills." };
   }
-
   if (hour >= 17 && hour < 21) {
-    return {
-      greeting: "Good Evening",
-      emoji: "🌙",
-      message:
-        "It's a great time to climb the leaderboard with a few battles.",
-    };
+    return { greeting: "Good Evening", emoji: "🌙", message: "It's a great time to climb the leaderboard with a few battles." };
   }
-
-  return {
-    greeting: "Good Night",
-    emoji: "🌌",
-    message:
-      "Review your progress today and prepare for tomorrow's challenges.",
-  };
+  return { greeting: "Good Night", emoji: "🌌", message: "Review your progress today and prepare for tomorrow's challenges." };
 }
-
-const stats = [
-  {
-    title: "Current Rating",
-    value: "1540",
-    subtitle: "+42 this month",
-  },
-  {
-    title: "Problems Solved",
-    value: "127",
-    subtitle: "12 this week",
-  },
-  {
-    title: "Battles Won",
-    value: "48",
-    subtitle: "65% Win Rate",
-  },
-  {
-    title: "Global Rank",
-    value: "#213",
-    subtitle: "Top 8%",
-  },
-];
-
-const quickActions = [
-  {
-    icon: BookOpen,
-    title: "Practice",
-    description:
-      "Sharpen your DSA skills by solving curated coding problems.",
-    buttonText: "Start Practicing",
-  },
-  {
-    icon: Swords,
-    title: "Start Battle",
-    description:
-      "Challenge another developer in a real-time coding duel.",
-    buttonText: "Find Opponent",
-  },
-  {
-    icon: Trophy,
-    title: "Create Contest",
-    description:
-      "Host coding contests and compete with your friends.",
-    buttonText: "Create Contest",
-  },
-];
 
 function Dashboard() {
   const { greeting, emoji, message } = getGreeting();
+  const navigate = useNavigate();
+  const [profileData, setProfileData] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Temporary
-  const userName = "Saquib";
+  useEffect(() => {
+    const fetchDashboardMetrics = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+
+        const response = await axios.get("http://localhost:5000/api/users/profile", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (response.data && response.data.user) {
+          setProfileData(response.data.user);
+          // Sync changes back to local auth state cache storage dynamically
+          localStorage.setItem("user", JSON.stringify(response.data.user));
+        }
+      } catch (err) {
+        console.error("Dashboard profile metrics sync failure:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDashboardMetrics();
+  }, []);
+
+  const currentRating = profileData?.rating || 1200;
+  const uniqueSolvedCount = profileData?.solvedProblems 
+    ? new Set(profileData.solvedProblems.map(p => p.title || p.problemId)).size 
+    : 0;
+  const totalWins = profileData?.battleWins || 0;
+
+  const stats = [
+    { title: "Current Rating", value: String(currentRating), subtitle: "Live Arena Elo" },
+    { title: "Problems Solved", value: String(uniqueSolvedCount), subtitle: "Unique Solutions" },
+    { title: "Battles Won", value: String(totalWins), subtitle: "Active Duels" },
+    { title: "Global Rank", value: profileData?.globalRank ? `#${profileData.globalRank}` : "Unranked", subtitle: "Top Tier Bracket" },
+  ];
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[calc(100vh-80px)] items-center justify-center bg-[#1E1E1E]">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-transparent border-t-[#A3FF12]" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#1E1E1E] text-white">
       <div className="mx-auto max-w-7xl px-6 py-10">
-        {/* Welcome Section */}
+        
+        {/* Welcome Block */}
         <div>
-          <p className="font-medium text-[#A3FF12]">
-            Welcome Back 👋
+          <p className="text-xs font-black tracking-widest text-[#A3FF12] uppercase bg-[#A3FF12]/5 px-3 py-1 rounded-md inline-block">
+            Console Core Operational
           </p>
-
-          <h1 className="mt-3 text-5xl font-bold">
-            {emoji} {greeting}, {userName}
+          <h1 className="mt-4 text-4xl font-black tracking-tight sm:text-5xl uppercase font-['Sora']">
+            {emoji} {greeting}, {profileData?.username || "Developer"}
           </h1>
-
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-gray-400">
+          <p className="mt-4 max-w-2xl text-base text-gray-500 font-medium leading-relaxed">
             {message}
           </p>
         </div>
 
-        {/* Statistics */}
-        <div className="mt-14 grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+        {/* Dynamic Metric Badges */}
+        <div className="mt-12 grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
           {stats.map((stat) => (
-            <StatCard
-              key={stat.title}
-              title={stat.title}
-              value={stat.value}
-              subtitle={stat.subtitle}
-            />
+            <StatCard key={stat.title} title={stat.title} value={stat.value} subtitle={stat.subtitle} />
           ))}
         </div>
 
-        {/* Quick Actions */}
-        <div className="mt-20">
-          <h2 className="text-3xl font-bold">
-            Quick Actions
-          </h2>
-
-          <p className="mt-2 text-gray-400">
-            Jump directly into your next challenge.
-          </p>
-
-          <div className="mt-8 grid gap-6 lg:grid-cols-3">
-            {quickActions.map((action) => (
-              <QuickActionCard
-                key={action.title}
-                icon={action.icon}
-                title={action.title}
-                description={action.description}
-                buttonText={action.buttonText}
-              />
-            ))}
+        {/* Quick Actions Router Enclave */}
+        <div className="mt-16">
+          <h2 className="text-2xl font-black uppercase tracking-tight text-white">Quick Actions</h2>
+          <div className="mt-6 grid gap-6 grid-cols-1 lg:grid-cols-3">
+            <QuickActionCard 
+              icon={BookOpen} 
+              title="Practice Area" 
+              description="Sharpen your algorithmic logic matrices by clearing curated problem queues."
+              buttonText="Start Practicing"
+              onClick={() => navigate("/problems")}
+            />
+            <QuickActionCard 
+              icon={Swords} 
+              title="Start Battle" 
+              description="Challenge alternative global engineers in synchronous speed programming duels."
+              buttonText="Find Opponent"
+              onClick={() => navigate("/battle")}
+            />
+            <QuickActionCard 
+              icon={Trophy} 
+              title="Create Contest" 
+              description="Spin custom lobby codes to challenge friends or coordinate private groups."
+              buttonText="Create Contest"
+              onClick={() => navigate("/contests")}
+            />
           </div>
         </div>
 
-        {/* Daily Challenge */}
-        <div className="mt-20">
+        {/* Daily Challenge Card Wrapper */}
+        <div className="mt-16">
           <DailyChallengeCard />
         </div>
+
       </div>
     </div>
   );

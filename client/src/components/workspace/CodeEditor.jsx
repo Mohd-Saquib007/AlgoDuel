@@ -3,78 +3,87 @@ import axios from "axios";
 import ExecutionContext from "../../context/ExecutionContext";
 import Editor from "@monaco-editor/react";
 
-function CodeEditor({ problemSlug }) {
-  const { language, setLanguage, code, setCode } = useContext(ExecutionContext);
+function CodeEditor({ problemSlug, isBattleMode, problemData: passedProblemData }) {
+  // 🟢 CRITICAL FIX: Extract context object reference defensively to prevent blank reference page crashes
+  const context = useContext(ExecutionContext);
+  
+  const language = context?.language || "cpp";
+  const setLanguage = context?.setLanguage || (() => {});
+  const code = context?.code || "";
+  const setCode = context?.setCode || (() => {});
+
   const [problemData, setProblemData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [editorCache, setEditorCache] = useState({});
 
   useEffect(() => {
     const syncProblemAndCode = async () => {
-      if (!problemSlug) return;
-      try {
-        setIsLoading(true);
-        const token = localStorage.getItem("token");
-
-        // 1. Fetch the general problem blueprint specifications
-        const probRes = await axios.get(`http://localhost:5000/api/problems/${problemSlug}`);
-        const data = probRes.data?.data || probRes.data;
-        setProblemData(data);
-
-        // 2. Check memory cache first for intermediate unsubmitted text modifications
-        const cacheKey = `${problemSlug}:${language}`;
-        if (editorCache[cacheKey]) {
-          setCode(editorCache[cacheKey]);
+      let activeData = null;
+      if (isBattleMode && passedProblemData) {
+        activeData = passedProblemData;
+        setProblemData(passedProblemData);
+      } else {
+        if (!problemSlug) return;
+        try {
+          setIsLoading(true);
+          const probRes = await axios.get(`http://localhost:5000/api/problems/${problemSlug}`);
+          activeData = probRes.data?.data || probRes.data;
+          setProblemData(activeData);
+        } catch (err) {
+          console.error("Critical error fetching single-player specifications:", err);
           setIsLoading(false);
           return;
         }
-
-        // 3. Fallback: Query submission records to see if the user previously passed this problem
-        if (token) {
-          try {
-            const subRes = await axios.get("http://localhost:5000/api/submissions/user/me", {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            const submissions = subRes.data?.data || subRes.data || [];
-            
-            // Find the latest successful submission matching this problem identifier
-            const passedRecord = submissions.find(
-              (sub) => 
-                (sub.problem?.slug === problemSlug || sub.problem?._id === data._id) && 
-                sub.verdict === "Accepted" && 
-                sub.language === language
-            );
-
-            if (passedRecord && passedRecord.sourceCode) {
-              setCode(passedRecord.sourceCode);
-              setIsLoading(false);
-              return;
-            }
-          } catch (subErr) {
-            console.warn("Could not retrieve user history logs, falling back to clean template.", subErr);
-          }
-        }
-
-        // 4. Default: Load the clean starter layout template out of MongoDB Atlas configurations
-        const matchingTemplate = data?.starterCode?.find((item) => item.language === language);
-        if (matchingTemplate && matchingTemplate.code) {
-          setCode(matchingTemplate.code);
-        } else {
-          setCode(`// Write your solution class for ${data?.title || "this problem"} here\n`);
-        }
-      } catch (err) {
-        console.error("Critical error mapping template workflows:", err);
-      } finally {
-        setIsLoading(false);
       }
+
+      const currentSlug = isBattleMode ? activeData?.slug : problemSlug;
+      const cacheKey = `${currentSlug}:${language}`;
+      if (editorCache[cacheKey]) {
+        setCode(editorCache[cacheKey]);
+        setIsLoading(false);
+        return;
+      }
+
+      const token = localStorage.getItem("token");
+      if (!isBattleMode && token && currentSlug) {
+        try {
+          const subRes = await axios.get("http://localhost:5000/api/submissions/user/me", {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const submissions = subRes.data?.data || subRes.data || [];
+          const passedRecord = submissions.find(
+            (sub) => 
+              (sub.problem?.slug === currentSlug || sub.problem?._id === activeData?._id) && 
+              sub.verdict === "Accepted" && 
+              sub.language === language
+          );
+
+          if (passedRecord && passedRecord.sourceCode) {
+            setCode(passedRecord.sourceCode);
+            setIsLoading(false);
+            return;
+          }
+        } catch (subErr) {
+          console.warn("Could not parse user history logs, running clean fallback configurations.", subErr);
+        }
+      }
+
+      const matchingTemplate = activeData?.starterCode?.find((item) => item.language === language);
+      if (matchingTemplate && matchingTemplate.code) {
+        setCode(matchingTemplate.code);
+      } else {
+        setCode(`// Write your solution class for ${activeData?.title || "this problem"} here\n`);
+      }
+      setIsLoading(false);
     };
 
     syncProblemAndCode();
-  }, [problemSlug, language]);
+  }, [problemSlug, isBattleMode, passedProblemData, language]);
 
   const handleLanguageChange = (e) => {
     const selectedLanguage = e.target.value;
-    const currentCacheKey = `${problemSlug}:${language}`;
+    const currentSlug = isBattleMode ? problemData?.slug : problemSlug;
+    const currentCacheKey = `${currentSlug}:${language}`;
     setEditorCache((prev) => ({ ...prev, [currentCacheKey]: code }));
     setLanguage(selectedLanguage);
   };
@@ -82,13 +91,14 @@ function CodeEditor({ problemSlug }) {
   const handleEditorChange = (value) => {
     const newCodeValue = value || "";
     setCode(newCodeValue);
-    const cacheKey = `${problemSlug}:${language}`;
+    const currentSlug = isBattleMode ? problemData?.slug : problemSlug;
+    const cacheKey = `${currentSlug}:${language}`;
     setEditorCache((prev) => ({ ...prev, [cacheKey]: newCodeValue }));
   };
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center bg-[#181818] text-gray-400 font-mono text-sm">
+      <div className="flex h-full items-center justify-center bg-[#181818] text-gray-500 font-mono text-sm">
         <div className="animate-pulse tracking-wider">Syncing challenge profile context...</div>
       </div>
     );
@@ -96,7 +106,6 @@ function CodeEditor({ problemSlug }) {
 
   return (
     <div className="flex h-full flex-col bg-[#181818]">
-      {/* Toolbar Controls */}
       <div className="flex items-center justify-between border-b border-white/10 bg-[#252526] px-5 py-3">
         <h3 className="font-semibold text-white tracking-wide text-sm">
           Code Editor &mdash; <span className="text-[#A3FF12] text-xs font-mono">{problemData?.title}</span>
@@ -114,7 +123,6 @@ function CodeEditor({ problemSlug }) {
         </select>
       </div>
 
-      {/* Monaco Sandbox View Area */}
       <div className="flex-1 min-h-0 relative">
         <Editor
           height="100%"
