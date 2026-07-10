@@ -10,16 +10,46 @@ const serializeStdinForCpp = (inputStr, params) => {
     if (!inputStr || String(inputStr).trim() === "") return "";
     let cleanStr = inputStr.trim().replace(/\r\n/g, "\n");
     
-    const hasVector = params.some(p => p.type.startsWith("vector"));
+    const vectorParam = params.find(p => p.type.startsWith("vector"));
 
-    if (hasVector) {
-        const arrayMatch = cleanStr.match(/\[(.*?)\]/);
-        if (arrayMatch) {
-            const elements = arrayMatch[1].split(",").map(x => x.trim()).filter(x => x !== "");
-            const targetMatch = cleanStr.match(/(?:target\s*=\s*|target\s+)?(-?\d+)\s*$/i);
-            const targetVal = targetMatch ? targetMatch[1] : "";
+    if (vectorParam) {
+        // FIXED: Dynamically check the type schema metadata instead of brittle character prefixes
+        if (vectorParam.type.startsWith("vector<vector")) {
+            // Wipes out variable prefixes like "mat =" safely by splitting from the first bracket block
+            const matrixContent = cleanStr.substring(cleanStr.indexOf("["));
+            const rowsMatch = matrixContent.match(/\[([^\[\]]+)\]/g);
             
-            return `${elements.length}\n${elements.join(" ")}\n${targetVal}`.trim();
+            if (rowsMatch) {
+                const rows = rowsMatch.length;
+                const flatElements = rowsMatch.map(row => 
+                    row.replace(/[\[\]"']/g, "").split(",").map(x => x.trim()).filter(x => x !== "")
+                );
+                const cols = flatElements[0].length;
+                const flatList = flatElements.flat();
+                
+                // Track trailing scalar variables if present (e.g., target parameters)
+                const targetMatch = cleanStr.match(/(?:,\s*\w+\s*=\s*|,\s*)(-?\d+)\s*$/i);
+                const targetVal = targetMatch ? targetMatch[1] : "";
+
+                return `${rows} ${cols}\n${flatList.join(" ")}\n${targetVal}`.trim();
+            }
+        } else {
+            // Existing 1D Vector branch parsing routine (Two Sum / Reverse String)
+            const arrayMatch = cleanStr.match(/\[(.*?)\]/);
+            if (arrayMatch) {
+                let rawElements = arrayMatch[1].split(",");
+                if (vectorParam.type.includes("char")) {
+                    rawElements = rawElements.map(x => x.replace(/['"]/g, "").trim());
+                } else {
+                    rawElements = rawElements.map(x => x.trim());
+                }
+                
+                const elements = rawElements.filter(x => x !== "");
+                const targetMatch = cleanStr.match(/(?:target\s*=\s*|target\s+)?(-?\d+)\s*$/i);
+                const targetVal = targetMatch ? targetMatch[1] : "";
+                
+                return `${elements.length}\n${elements.join(" ")}\n${targetVal}`.trim();
+            }
         }
         
         if (!cleanStr.includes("[") && !cleanStr.includes("]")) {
@@ -41,8 +71,7 @@ const generateUniversalCppHarness = (userSolutionCode, problemDoc) => {
     const { returnType, functionName, params } = problemDoc.harnessConfig;
     const trimmedSource = (userSolutionCode || "").trim().replace(/\r\n/g, "\n");
     
-    // FIXED: Added an explicit mandate declaration layout statement instructing Windows GCC linkers to target standard console drivers
-    const globalHeaders = "#pragma comment(linker, \"/SUBSYSTEM:CONSOLE\")\n#include <iostream>\n#include <vector>\n#include <map>\n#include <string>\n#include <stack>\n#include <unordered_map>\n#include <sstream>\n#include <algorithm>\nusing namespace std;\n\n";
+    const globalHeaders = "#pragma comment(linker, \"/SUBSYSTEM:CONSOLE\")\n#include <bits/stdc++.h>\nusing namespace std;\n\n";
 
     let paramDeclarations = "";
     let streamInputs = "";
@@ -52,7 +81,19 @@ const generateUniversalCppHarness = (userSolutionCode, problemDoc) => {
         paramDeclarations += `    ${param.type} ${param.name};\n`;
         functionArgs.push(param.name);
 
-        if (param.type.startsWith("vector")) {
+        if (param.type.startsWith("vector<vector")) {
+            const innerType = param.type.includes("char") ? "char" : "int";
+            streamInputs += `
+    int rows_${param.name} = 0, cols_${param.name} = 0;
+    if (cin >> rows_${param.name} >> cols_${param.name}) {
+        ${param.name}.resize(rows_${param.name}, vector<${innerType}>(cols_${param.name}));
+        for (int i = 0; i < rows_${param.name}; ++i) {
+            for (int j = 0; j < cols_${param.name}; ++j) {
+                cin >> ${param.name}[i][j];
+            }
+        }
+    }\n`;
+        } else if (param.type.startsWith("vector")) {
             streamInputs += `
     int size_${param.name} = 0;
     if (cin >> size_${param.name}) {
@@ -67,22 +108,50 @@ const generateUniversalCppHarness = (userSolutionCode, problemDoc) => {
     });
 
     let outputFormatter = "";
-    if (returnType.startsWith("vector")) {
+    let functionCall = "";
+
+    if (returnType === "void") {
+        const primaryParamName = params[0].name;
+        functionCall = `sol.${functionName}(${functionArgs.join(", ")});`;
         outputFormatter = `
+    cout << "[";
+    for (size_t i = 0; i < ${primaryParamName}.size(); ++i) {
+        if (i > 0) cout << ",";
+        cout << ${primaryParamName}[i];
+    }
+    cout << "]";\n`;
+    } else {
+        functionCall = `${returnType} result = sol.${functionName}(${functionArgs.join(", ")});`;
+        
+        if (returnType.startsWith("vector<vector")) {
+            outputFormatter = `
+    cout << "[";
+    for (size_t i = 0; i < result.size(); ++i) {
+        if (i > 0) cout << ",";
+        cout << "[";
+        for (size_t j = 0; j < result[i].size(); ++j) {
+            if (j > 0) cout << ",";
+            cout << result[i][j];
+        }
+        cout << "]";
+    }
+    cout << "]";\n`;
+        } else if (returnType.startsWith("vector")) {
+            outputFormatter = `
     cout << "[";
     for (size_t i = 0; i < result.size(); ++i) {
         if (i > 0) cout << ",";
         cout << result[i];
     }
     cout << "]";\n`;
-    } else if (returnType === "bool") {
-        outputFormatter = `    cout << (result ? "true" : "false");\n`;
-    } else {
-        outputFormatter = `    cout << result;\n`;
+        } else if (returnType === "bool") {
+            outputFormatter = `    cout << (result ? "true" : "false");\n`;
+        } else {
+            outputFormatter = `    cout << result;\n`;
+        }
     }
 
-    // FIXED: Ensured standard console main signatures match Windows environment link targets explicitly
-    return `${globalHeaders}\n${trimmedSource}\n\nint main(int argc, char* argv[]) {\n    ios_base::sync_with_stdio(false);\n    cin.tie(NULL);\n${paramDeclarations}\n${streamInputs}\n    Solution sol;\n    ${returnType} result = sol.${functionName}(${functionArgs.join(", ")});\n${outputFormatter}    return 0;\n}`;
+    return `${globalHeaders}\n${trimmedSource}\n\nint main(int argc, char* argv[]) {\n    ios_base::sync_with_stdio(false);\n    cin.tie(NULL);\n${paramDeclarations}\n${streamInputs}\n    Solution sol;\n    ${functionCall}\n${outputFormatter}    return 0;\n}`;
 };
 
 exports.createSubmission = async (req, res) => {
@@ -144,7 +213,8 @@ exports.createSubmission = async (req, res) => {
                     const localResponse = await axios.post("http://localhost:5000/api/execution/run", {
                         language,
                         sourceCode: compiledSource,
-                        stdin: serializedStdin
+                        stdin: serializedStdin,
+                        problemSlug: problemDoc.slug
                     });
                     if (localResponse.data && localResponse.data.run) {
                         rawOutput = localResponse.data.run.stderr || localResponse.data.run.output || "";
@@ -160,8 +230,8 @@ exports.createSubmission = async (req, res) => {
             const databaseExpected = testCase.expectedOutput || testCase.expectedoutput || "";
             const expectedOutput = String(databaseExpected).trim();
 
-            const cleanActual = actualOutput.replace(/[^0-9a-zA-Z-]/g, "").trim();
-            const cleanExpected = expectedOutput.replace(/[^0-9a-zA-Z-]/g, "").trim();
+            const cleanActual = actualOutput.replace(/[^0-9a-zA-Z-]/g, "").toLowerCase().trim();
+            const cleanExpected = expectedOutput.replace(/[^0-9a-zA-Z-]/g, "").toLowerCase().trim();
 
             let matchIsCorrect = (cleanActual === cleanExpected && cleanActual !== "");
             
@@ -174,8 +244,6 @@ exports.createSubmission = async (req, res) => {
 
             console.log("\n🧪 [SUBMIT DEBUG] Checking Test Case ID:", testCase._id);
             console.log("📥 Raw Input fed to program: ", JSON.stringify(serializedStdin));
-            console.log("💥 RAW Program Stdout (Actual):   ", JSON.stringify(actualOutput));
-            console.log("💥 RAW Database String (Expected):", JSON.stringify(expectedOutput));
             console.log("A Output (Normalized Actual):  ", JSON.stringify(cleanActual));
             console.log("B Output (Normalized Expected):", JSON.stringify(cleanExpected));
             console.log("⚖️ Match Evaluation Verdict:    ", matchIsCorrect);

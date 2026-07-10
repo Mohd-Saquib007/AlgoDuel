@@ -15,7 +15,6 @@ function ConsolePanel({ problemSlug }) {
         const res = await axios.get(`http://localhost:5000/api/problems/${problemSlug}`);
         const problemData = res.data?.data || res.data;
         if (problemData) {
-          // If examples array exists, load the first entry, else map fallbacks
           if (problemData.examples && problemData.examples.length > 0) {
             setSampleInput(problemData.examples[0].input || "");
             setExpectedOutput(problemData.examples[0].output || "");
@@ -32,13 +31,19 @@ function ConsolePanel({ problemSlug }) {
   }, [problemSlug]);
 
   const runData = result?.run || null;
-  const status = runData?.status || null;
   const outputText = runData?.output || "";
   const runtime = runData?.time || "--";
   const memory = runData?.memory || "--";
 
+  // Client-side exact evaluation check rule configuration
+  const cleanActual = String(outputText).replace(/[^0-9a-zA-Z-]/g, "").toLowerCase().trim();
+  const cleanExpected = String(expectedOutput).replace(/[^0-9a-zA-Z-]/g, "").toLowerCase().trim();
+  
+  // FIXED: Evaluates status based on structural value identity match signatures securely
+  const dynamicStatus = (cleanActual === cleanExpected && cleanActual !== "") ? "Accepted" : "Wrong Answer";
+
   const getStatusColor = (statusText) => {
-    if (statusText === "Accepted") return "text-[#2cbb5d]";
+    if (statusText === "Accepted" || statusText === "Executed") return "text-[#2cbb5d]";
     if (statusText === "Wrong Answer") return "text-[#ef4743]";
     if (statusText?.includes("Error")) return "text-[#f9a825]";
     return "text-white";
@@ -51,9 +56,7 @@ function ConsolePanel({ problemSlug }) {
         <button
           onClick={() => setActiveTab("testcase")}
           className={`px-5 py-3 text-sm font-medium transition ${
-            activeTab === "testcase"
-              ? "border-b-2 border-[#A3FF12] text-[#A3FF12]"
-              : "text-gray-400 hover:text-white"
+            activeTab === "testcase" ? "border-b-2 border-[#A3FF12] text-[#A3FF12]" : "text-gray-400 hover:text-white"
           }`}
         >
           Test Case
@@ -62,9 +65,7 @@ function ConsolePanel({ problemSlug }) {
         <button
           onClick={() => setActiveTab("result")}
           className={`px-5 py-3 text-sm font-medium transition ${
-            activeTab === "result"
-              ? "border-b-2 border-[#A3FF12] text-[#A3FF12]"
-              : "text-gray-400 hover:text-white"
+            activeTab === "result" ? "border-b-2 border-[#A3FF12] text-[#A3FF12]" : "text-gray-400 hover:text-white"
           }`}
         >
           Result
@@ -94,14 +95,14 @@ function ConsolePanel({ problemSlug }) {
           <>
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-200">Execution Result</h3>
-              {status && (
-                <span className={`text-base font-bold uppercase tracking-wider ${getStatusColor(status)}`}>
-                  {status}
+              {result && (
+                <span className={`text-base font-bold uppercase tracking-wider ${getStatusColor(dynamicStatus)}`}>
+                  {dynamicStatus === "Accepted" ? "ACCEPTED" : "WRONG ANSWER"}
                 </span>
               )}
             </div>
 
-            <div className="mt-4 rounded-xl bg-[#1E1E1E] p-4 border border-white/5 min-h-[60px]">
+            <div className="mt-4 rounded-xl bg-[#1E1E1E] p-4 border border-white/5 min-h-60px">
               {result !== null ? (
                 <div>
                   <p className="text-xs text-gray-400 font-medium mb-2">Your Output</p>

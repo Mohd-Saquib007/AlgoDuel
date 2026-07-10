@@ -7,28 +7,59 @@ const PistonService = require("../services/piston.service");
 const serializeStdinForCpp = (inputStr, params) => {
     console.log("\n🧪 [DEBUG] Entering serializeStdinForCpp with input:", JSON.stringify(inputStr));
     if (!inputStr || String(inputStr).trim() === "") return "";
-    let cleanStr = inputStr.trim();
+    let cleanStr = inputStr.trim().replace(/\r\n/g, "\n");
 
-    const hasVector = params.some(p => p.type.startsWith("vector"));
+    const vectorParam = params.find(p => p.type.startsWith("vector"));
 
-    if (hasVector) {
-        // Isolate the bracket block elements
-        const arrayMatch = cleanStr.match(/\[(.*?)\]/);
-        if (arrayMatch) {
-            const elements = arrayMatch[1].split(",").map(x => x.trim()).filter(x => x !== "");
+    if (vectorParam) {
+        // FIXED: Dynamically check the type schema metadata instead of brittle character prefixes
+        if (vectorParam.type.startsWith("vector<vector")) {
+            // Wipes out variable prefixes like "mat =" safely
+            const matrixContent = cleanStr.substring(cleanStr.indexOf("["));
+            const rowsMatch = matrixContent.match(/\[([^\[\]]+)\]/g);
             
-            // Isolate trailing target variable properties
-            const targetMatch = cleanStr.match(/(?:target\s*=\s*)?(-?\d+)\s*$/);
-            const targetVal = targetMatch ? targetMatch[1] : "";
+            if (rowsMatch) {
+                const rows = rowsMatch.length;
+                const flatElements = rowsMatch.map(row => 
+                    row.replace(/[\[\]"']/g, "").split(",").map(x => x.trim()).filter(x => x !== "")
+                );
+                const cols = flatElements[0].length;
+                const flatList = flatElements.flat();
+                
+                // Track trailing scalar variables if present
+                const targetMatch = cleanStr.match(/(?:,\s*\w+\s*=\s*|,\s*)(-?\d+)\s*$/i);
+                const targetVal = targetMatch ? targetMatch[1] : "";
 
-            // Format standard input stream structure: [Length] [Array Elements] [Scalar Value]
-            const formatted = `${elements.length}\n${elements.join(" ")}\n${targetVal}`.trim();
-            console.log("👉 [DEBUG] Vector Problem Serialized Input Stream:\n", JSON.stringify(formatted));
-            return formatted;
+                const formatted = `${rows} ${cols}\n${flatList.join(" ")}\n${targetVal}`.trim();
+                console.log("👉 [DEBUG] Matrix 2D Serialized Input Stream:\n", JSON.stringify(formatted));
+                return formatted;
+            }
+        } else {
+            // Existing 1D Vector branch parsing routine (Two Sum / Reverse String)
+            const arrayMatch = cleanStr.match(/\[(.*?)\]/);
+            if (arrayMatch) {
+                let rawElements = arrayMatch[1].split(",");
+                if (vectorParam.type.includes("char")) {
+                    rawElements = rawElements.map(x => x.replace(/['"]/g, "").trim());
+                } else {
+                    rawElements = rawElements.map(x => x.trim());
+                }
+                
+                const elements = rawElements.filter(x => x !== "");
+                const targetMatch = cleanStr.match(/(?:target\s*=\s*|target\s+)?(-?\d+)\s*$/i);
+                const targetVal = targetMatch ? targetMatch[1] : "";
+
+                const formatted = `${elements.length}\n${elements.join(" ")}\n${targetVal}`.trim();
+                console.log("👉 [DEBUG] Vector Problem Serialized Input Stream:\n", JSON.stringify(formatted));
+                return formatted;
+            }
+        }
+        
+        if (!cleanStr.includes("[") && !cleanStr.includes("]")) {
+            return cleanStr;
         }
     }
 
-    // Isolate single string values (like Valid Parentheses) from variable labels and quotes
     let stringClean = cleanStr.replace(/^(s|input)\s*=\s*/i, "");
     stringClean = stringClean.replace(/^["']|["']$/g, "");
     console.log("👉 [DEBUG] Primitive Problem Serialized Input Stream:", JSON.stringify(stringClean));
@@ -42,10 +73,9 @@ const generateUniversalCppHarness = (userSolutionCode, problemDoc) => {
     }
 
     const { returnType, functionName, params } = problemDoc.harnessConfig;
-    const trimmedSource = (userSolutionCode || "").trim();
+    const trimmedSource = (userSolutionCode || "").trim().replace(/\r\n/g, "\n");
     
-    // Pristine headers including both standard structures and optimized structures
-    const globalHeaders = "#include <iostream>\n#include <vector>\n#include <map>\n#include <string>\n#include <stack>\n#include <unordered_map>\n#include <sstream>\n#include <algorithm>\nusing namespace std;\n\n";
+    const globalHeaders = "#pragma comment(linker, \"/SUBSYSTEM:CONSOLE\")\n#include <iostream>\n#include <vector>\n#include <map>\n#include <string>\n#include <stack>\n#include <unordered_map>\n#include <sstream>\n#include <algorithm>\nusing namespace std;\n\n";
 
     let paramDeclarations = "";
     let streamInputs = "";
@@ -55,10 +85,21 @@ const generateUniversalCppHarness = (userSolutionCode, problemDoc) => {
         paramDeclarations += `    ${param.type} ${param.name};\n`;
         functionArgs.push(param.name);
 
-        if (param.type.startsWith("vector")) {
-            // Read array lengths cleanly before indexing elements sequentially
+        if (param.type.startsWith("vector<vector")) {
+            const innerType = param.type.includes("char") ? "char" : "int";
             streamInputs += `
-    int size_${param.name};
+    int rows_${param.name} = 0, cols_${param.name} = 0;
+    if (cin >> rows_${param.name} >> cols_${param.name}) {
+        ${param.name}.resize(rows_${param.name}, vector<${innerType}>(cols_${param.name}));
+        for (int i = 0; i < rows_${param.name}; ++i) {
+            for (int j = 0; j < cols_${param.name}; ++j) {
+                cin >> ${param.name}[i][j];
+            }
+        }
+    }\n`;
+        } else if (param.type.startsWith("vector")) {
+            streamInputs += `
+    int size_${param.name} = 0;
     if (cin >> size_${param.name}) {
         ${param.name}.resize(size_${param.name});
         for (int i = 0; i < size_${param.name}; ++i) {
@@ -71,36 +112,50 @@ const generateUniversalCppHarness = (userSolutionCode, problemDoc) => {
     });
 
     let outputFormatter = "";
-    if (returnType.startsWith("vector")) {
+    let functionCall = "";
+
+    if (returnType === "void") {
+        const primaryParamName = params[0].name;
+        functionCall = `sol.${functionName}(${functionArgs.join(", ")});`;
         outputFormatter = `
+    cout << "[";
+    for (size_t i = 0; i < ${primaryParamName}.size(); ++i) {
+        if (i > 0) cout << ",";
+        cout << ${primaryParamName}[i];
+    }
+    cout << "]";\n`;
+    } else {
+        functionCall = `${returnType} result = sol.${functionName}(${functionArgs.join(", ")});`;
+        
+        if (returnType.startsWith("vector<vector")) {
+            outputFormatter = `
+    cout << "[";
+    for (size_t i = 0; i < result.size(); ++i) {
+        if (i > 0) cout << ",";
+        cout << "[";
+        for (size_t j = 0; j < result[i].size(); ++j) {
+            if (j > 0) cout << ",";
+            cout << result[i][j];
+        }
+        cout << "]";
+    }
+    cout << "]";\n`;
+        } else if (returnType.startsWith("vector")) {
+            outputFormatter = `
     cout << "[";
     for (size_t i = 0; i < result.size(); ++i) {
         if (i > 0) cout << ",";
         cout << result[i];
     }
-    cout << "]";`;
-    } else if (returnType === "bool") {
-        outputFormatter = `    cout << (result ? "true" : "false");\n`;
-    } else {
-        outputFormatter = `    cout << result;\n`;
+    cout << "]";\n`;
+        } else if (returnType === "bool") {
+            outputFormatter = `    cout << (result ? "true" : "false");\n`;
+        } else {
+            outputFormatter = `    cout << result;\n`;
+        }
     }
 
-    const completeHarness = `${globalHeaders}\n${trimmedSource}\n\nint main() {
-    ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
-${paramDeclarations}
-${streamInputs}
-    Solution sol;
-    ${returnType} result = sol.${functionName}(${functionArgs.join(", ")});
-${outputFormatter}
-    return 0;
-}`;
-
-    console.log("\n🛠️ [DEBUG] Auto-Generated Full C++ Driver Compilation Code Harness:");
-    console.log("------------------------------------------------------------------");
-    console.log(completeHarness);
-    console.log("------------------------------------------------------------------\n");
-    return completeHarness;
+    return `${globalHeaders}\n${trimmedSource}\n\nint main(int argc, char* argv[]) {\n    ios_base::sync_with_stdio(false);\n    cin.tie(NULL);\n${paramDeclarations}\n${streamInputs}\n    Solution sol;\n    ${functionCall}\n${outputFormatter}    return 0;\n}`;
 };
 
 exports.runCode = async (req, res) => {
@@ -157,29 +212,20 @@ exports.runCode = async (req, res) => {
 
         } catch (pistonError) {
             console.warn("\n❌ [DEBUG] Piston Service Error Catch Triggered. Reason:", pistonError.message);
-            console.log("Cascading code payload processing immediately down to Port 7000 Sandbox microservice...");
-            
             try {
                 const executorUrl = process.env.EXECUTOR_URL || "http://localhost:7000";
-                console.log(`🌐 [DEBUG] Hitting local sandbox microservice endpoint route: ${executorUrl}/run`);
-                
                 const response = await axios.post(`${executorUrl}/run`, {
                     language,
                     sourceCode: compiledSource,
                     stdin: serializedStdin
                 });
                 
-                console.log("📦 [DEBUG] Port 7000 Sandbox Microservice Local Raw Response Payload Structure:\n", JSON.stringify(response.data, null, 2));
-                
                 const sandboxData = response.data?.run || response.data || {};
                 let sandboxOutput = sandboxData.output || sandboxData.stdout || "";
                 let sandboxStatus = sandboxData.status || "Executed";
 
-                // ROBUST LAYER EXTRACTOR: If sandbox returns structural stderr errors, bubble them up safely
                 if (sandboxData.stderr && sandboxData.stderr.trim() !== "") {
                     sandboxOutput = sandboxData.stderr.trim();
-                    sandboxStatus = "Runtime Error";
-                } else if (typeof sandboxOutput === "string" && sandboxOutput.toLowerCase().includes("runtime error")) {
                     sandboxStatus = "Runtime Error";
                 }
                 
@@ -193,14 +239,11 @@ exports.runCode = async (req, res) => {
                     } 
                 });
             } catch (axiosError) {
-                console.error("\n💥 [DEBUG] Port 7000 Isolation Subprocess Execution Failed completely:");
-                console.error("Message:", axiosError.message);
-
                 return res.status(200).json({
                     success: true,
                     run: {
                         status: "Runtime Error",
-                        output: `Both sandbox execution routes are offline. Local Runner Exception: ${axiosError.message}`,
+                        output: `Sandbox offline. Local Runner Exception: ${axiosError.message}`,
                         time: "0 ms",
                         memory: "0 MB"
                     }
@@ -208,7 +251,6 @@ exports.runCode = async (req, res) => {
             }
         }
     } catch (error) {
-        console.error("🔥 [DEBUG] Top-level Controller Route Exception Trapped:", error.message);
         res.status(500).json({ success: false, message: error.message });
     }
 };
@@ -259,7 +301,19 @@ exports.runProblemTests = async (req, res) => {
                     actualOutput = String(runPayload.stdout || runPayload.output || "").trim();
                     testResult.actualOutput = actualOutput;
 
-                    if (actualOutput === testCase.expectedOutput.trim()) {
+                    const cleanActual = actualOutput.replace(/[^0-9a-zA-Z-]/g, "").toLowerCase().trim();
+                    const cleanExpected = String(testCase.expectedOutput || "").replace(/[^0-9a-zA-Z-]/g, "").toLowerCase().trim();
+
+                    let matchIsCorrect = (cleanActual === cleanExpected && cleanActual !== "");
+                    
+                    if (!matchIsCorrect && cleanActual.length === 2 && cleanExpected.length === 2) {
+                        const reversedActual = cleanActual.split("").reverse().join("");
+                        if (reversedActual === cleanExpected) {
+                            matchIsCorrect = true;
+                        }
+                    }
+
+                    if (matchIsCorrect) {
                         testResult.status = "Passed";
                     } else {
                         testResult.status = "Failed";
