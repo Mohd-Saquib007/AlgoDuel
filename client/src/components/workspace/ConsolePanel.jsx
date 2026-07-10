@@ -2,24 +2,37 @@ import { useState, useEffect, useContext } from "react";
 import axios from "axios";
 import ExecutionContext from "../../context/ExecutionContext";
 
-function ConsolePanel({ problemSlug }) {
+function ConsolePanel({ problemSlug, isBattleMode, problemData }) {
   const [activeTab, setActiveTab] = useState("testcase");
   const [sampleInput, setSampleInput] = useState("");
   const [expectedOutput, setExpectedOutput] = useState("");
   const { result } = useContext(ExecutionContext);
 
   useEffect(() => {
+    // 🟢 MULTIPLAYER WAY: Parse inputs straight out of the socket payload
+    if (isBattleMode && problemData) {
+      if (problemData.examples && problemData.examples.length > 0) {
+        setSampleInput(problemData.examples[0].input || "");
+        setExpectedOutput(problemData.examples[0].output || "");
+      } else {
+        setSampleInput(problemData.example ? problemData.example : "No sample input defined.");
+        setExpectedOutput("No expected output defined.");
+      }
+      return;
+    }
+
+    // 🔵 PRACTICE MODE WAY: Standard HTTP API fallback fetch
     const fetchSampleTestCase = async () => {
       if (!problemSlug) return;
       try {
         const res = await axios.get(`http://localhost:5000/api/problems/${problemSlug}`);
-        const problemData = res.data?.data || res.data;
-        if (problemData) {
-          if (problemData.examples && problemData.examples.length > 0) {
-            setSampleInput(problemData.examples[0].input || "");
-            setExpectedOutput(problemData.examples[0].output || "");
+        const data = res.data?.data || res.data;
+        if (data) {
+          if (data.examples && data.examples.length > 0) {
+            setSampleInput(data.examples[0].input || "");
+            setExpectedOutput(data.examples[0].output || "");
           } else {
-            setSampleInput(problemData.example ? problemData.example : "No sample input defined.");
+            setSampleInput(data.example ? data.example : "No sample input defined.");
             setExpectedOutput("No expected output defined.");
           }
         }
@@ -28,30 +41,25 @@ function ConsolePanel({ problemSlug }) {
       }
     };
     fetchSampleTestCase();
-  }, [problemSlug]);
+  }, [problemSlug, isBattleMode, problemData]);
 
   const runData = result?.run || null;
   const outputText = runData?.output || "";
   const runtime = runData?.time || "--";
   const memory = runData?.memory || "--";
 
-  // Client-side exact evaluation check rule configuration
   const cleanActual = String(outputText).replace(/[^0-9a-zA-Z-]/g, "").toLowerCase().trim();
   const cleanExpected = String(expectedOutput).replace(/[^0-9a-zA-Z-]/g, "").toLowerCase().trim();
-  
-  // FIXED: Evaluates status based on structural value identity match signatures securely
   const dynamicStatus = (cleanActual === cleanExpected && cleanActual !== "") ? "Accepted" : "Wrong Answer";
 
   const getStatusColor = (statusText) => {
     if (statusText === "Accepted" || statusText === "Executed") return "text-[#2cbb5d]";
     if (statusText === "Wrong Answer") return "text-[#ef4743]";
-    if (statusText?.includes("Error")) return "text-[#f9a825]";
     return "text-white";
   };
 
   return (
     <div className="flex h-full flex-col bg-[#252526] text-white font-sans">
-      {/* Tabs Layout */}
       <div className="flex border-b border-white/10 bg-[#1e1e1e]">
         <button
           onClick={() => setActiveTab("testcase")}
@@ -61,7 +69,6 @@ function ConsolePanel({ problemSlug }) {
         >
           Test Case
         </button>
-
         <button
           onClick={() => setActiveTab("result")}
           className={`px-5 py-3 text-sm font-medium transition ${
@@ -72,7 +79,6 @@ function ConsolePanel({ problemSlug }) {
         </button>
       </div>
 
-      {/* Content Display Panel */}
       <div className="flex-1 overflow-y-auto p-5">
         {activeTab === "testcase" ? (
           <>
@@ -83,7 +89,6 @@ function ConsolePanel({ problemSlug }) {
                 {sampleInput}
               </pre>
             </div>
-
             <div className="mt-5">
               <p className="text-xs text-gray-400 font-medium">Expected Output</p>
               <pre className="mt-2 rounded-xl bg-[#1E1E1E] p-4 text-sm font-mono text-gray-300 border border-white/5 whitespace-pre-wrap">
@@ -101,7 +106,6 @@ function ConsolePanel({ problemSlug }) {
                 </span>
               )}
             </div>
-
             <div className="mt-4 rounded-xl bg-[#1E1E1E] p-4 border border-white/5 min-h-60px">
               {result !== null ? (
                 <div>
@@ -116,13 +120,11 @@ function ConsolePanel({ problemSlug }) {
                 </p>
               )}
             </div>
-
             <div className="mt-5 grid grid-cols-2 gap-4">
               <div className="rounded-xl bg-[#1E1E1E] p-4 border border-white/5">
                 <p className="text-xs text-gray-400 font-medium">Runtime</p>
                 <p className="mt-2 text-lg font-semibold text-gray-200">{runtime}</p>
               </div>
-
               <div className="rounded-xl bg-[#1E1E1E] p-4 border border-white/5">
                 <p className="text-xs text-gray-400 font-medium">Memory</p>
                 <p className="mt-2 text-lg font-semibold text-gray-200">{memory}</p>
