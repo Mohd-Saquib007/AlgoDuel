@@ -9,15 +9,54 @@ const serializeStdinForCpp = (inputStr, params) => {
     if (!inputStr || String(inputStr).trim() === "") return "";
     let cleanStr = inputStr.trim().replace(/\r\n/g, "\n");
 
+    const graphNodeParam = params.find(p => p.type === "Node*");
+    const treeNodeParam = params.find(p => p.type === "TreeNode*");
+    const listNodeParam = params.find(p => p.type === "ListNode*");
     const vectorParam = params.find(p => p.type.startsWith("vector"));
 
-    if (vectorParam) {
-        // FIXED: Dynamically check the type schema metadata instead of brittle character prefixes
+    if (graphNodeParam) {
+        const graphContent = cleanStr.substring(cleanStr.indexOf("["));
+        const rowsMatch = graphContent.match(/\[([^\[\]]*?)\]/g);
+        if (rowsMatch) {
+            const totalNodes = rowsMatch.length;
+            let neighborCounts = [];
+            let flattenedNeighbors = [];
+            
+            rowsMatch.forEach(row => {
+                const elements = row.replace(/[\[\]"']/g, "").split(",").map(x => x.trim()).filter(x => x !== "");
+                neighborCounts.push(elements.length);
+                elements.forEach(el => flattenedNeighbors.push(el));
+            });
+
+            const formatted = `${totalNodes}\n${neighborCounts.join(" ")}\n${flattenedNeighbors.join(" ")}`.trim();
+            console.log("👉 [DEBUG] Graph Node Problem Serialized Input Stream:\n", JSON.stringify(formatted));
+            return formatted;
+        }
+    } else if (treeNodeParam) {
+        const treeContent = cleanStr.substring(cleanStr.indexOf("["));
+        const arrayMatch = treeContent.match(/\[(.*?)\]/);
+        if (arrayMatch) {
+            const elements = arrayMatch[1].split(",").map(x => {
+                let token = x.trim().toLowerCase();
+                return (token === "null" || token === "nullptr") ? "-999" : token;
+            }).filter(x => x !== "");
+            const formatted = `${elements.length}\n${elements.join(" ")}`.trim();
+            console.log("👉 [DEBUG] TreeNode Problem Serialized Input Stream:\n", JSON.stringify(formatted));
+            return formatted;
+        }
+    } else if (listNodeParam) {
+        const listContent = cleanStr.substring(cleanStr.indexOf("["));
+        const arrayMatch = listContent.match(/\[(.*?)\]/);
+        if (arrayMatch) {
+            const elements = arrayMatch[1].split(",").map(x => x.trim()).filter(x => x !== "");
+            const formatted = `${elements.length}\n${elements.join(" ")}`.trim();
+            console.log("👉 [DEBUG] ListNode Problem Serialized Input Stream:\n", JSON.stringify(formatted));
+            return formatted;
+        }
+    } else if (vectorParam) {
         if (vectorParam.type.startsWith("vector<vector")) {
-            // Wipes out variable prefixes like "mat =" safely
             const matrixContent = cleanStr.substring(cleanStr.indexOf("["));
             const rowsMatch = matrixContent.match(/\[([^\[\]]+)\]/g);
-            
             if (rowsMatch) {
                 const rows = rowsMatch.length;
                 const flatElements = rowsMatch.map(row => 
@@ -26,7 +65,6 @@ const serializeStdinForCpp = (inputStr, params) => {
                 const cols = flatElements[0].length;
                 const flatList = flatElements.flat();
                 
-                // Track trailing scalar variables if present
                 const targetMatch = cleanStr.match(/(?:,\s*\w+\s*=\s*|,\s*)(-?\d+)\s*$/i);
                 const targetVal = targetMatch ? targetMatch[1] : "";
 
@@ -35,7 +73,6 @@ const serializeStdinForCpp = (inputStr, params) => {
                 return formatted;
             }
         } else {
-            // Existing 1D Vector branch parsing routine (Two Sum / Reverse String)
             const arrayMatch = cleanStr.match(/\[(.*?)\]/);
             if (arrayMatch) {
                 let rawElements = arrayMatch[1].split(",");
@@ -54,7 +91,6 @@ const serializeStdinForCpp = (inputStr, params) => {
                 return formatted;
             }
         }
-        
         if (!cleanStr.includes("[") && !cleanStr.includes("]")) {
             return cleanStr;
         }
@@ -75,18 +111,160 @@ const generateUniversalCppHarness = (userSolutionCode, problemDoc) => {
     const { returnType, functionName, params } = problemDoc.harnessConfig;
     const trimmedSource = (userSolutionCode || "").trim().replace(/\r\n/g, "\n");
     
-    const globalHeaders = "#pragma comment(linker, \"/SUBSYSTEM:CONSOLE\")\n#include <iostream>\n#include <vector>\n#include <map>\n#include <string>\n#include <stack>\n#include <unordered_map>\n#include <sstream>\n#include <algorithm>\nusing namespace std;\n\n";
+    const globalHeaders = `
+#pragma comment(linker, "/SUBSYSTEM:CONSOLE")
+#include <iostream>
+#include <vector>
+#include <map>
+#include <string>
+#include <stack>
+#include <unordered_map>
+#include <sstream>
+#include <algorithm>
+#include <queue>
+#include <set>
+using namespace std;
+
+struct ListNode {
+    int val;
+    ListNode *next;
+    ListNode() : val(0), next(nullptr) {}
+    ListNode(int x) : val(x), next(nullptr) {}
+    ListNode(int x, ListNode *next) : val(x), next(next) {}
+};
+
+ListNode* buildList(const vector<int>& nums) {
+    if (nums.empty()) return nullptr;
+    ListNode* head = new ListNode(nums[0]);
+    ListNode* curr = head;
+    for (size_t i = 1; i < nums.size(); ++i) {
+        curr->next = new ListNode(nums[i]);
+        curr = curr->next;
+    }
+    return head;
+}
+
+struct TreeNode {
+    int val;
+    TreeNode *left;
+    TreeNode *right;
+    TreeNode() : val(0), left(nullptr), right(nullptr) {}
+    TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+    TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}
+};
+
+TreeNode* buildTree(const vector<int>& nums) {
+    if (nums.empty() || nums[0] == -999) return nullptr;
+    TreeNode* root = new TreeNode(nums[0]);
+    queue<TreeNode*> q;
+    q.push(root);
+    size_t i = 1;
+    while (!q.empty() && i < nums.size()) {
+        TreeNode* curr = q.front();
+        q.pop();
+        if (i < nums.size() && nums[i] != -999) {
+            curr->left = new TreeNode(nums[i]);
+            q.push(curr->left);
+        }
+        i++;
+        if (i < nums.size() && nums[i] != -999) {
+            curr->right = new TreeNode(nums[i]);
+            q.push(curr->right);
+        }
+        i++;
+    }
+    return root;
+}
+
+class Node {
+public:
+    int val;
+    vector<Node*> neighbors;
+    Node() {
+        val = 0;
+        neighbors = vector<Node*>();
+    }
+    Node(int _val) {
+        val = _val;
+        neighbors = vector<Node*>();
+    }
+    Node(int _val, vector<Node*> _neighbors) {
+        val = _val;
+        neighbors = _neighbors;
+    }
+};
+
+Node* buildGraph(int totalNodes, const vector<int>& flattenedNeighbors, const vector<int>& neighborCounts) {
+    if (totalNodes == 0) return nullptr;
+    vector<Node*> nodeMap(totalNodes + 1);
+    for (int i = 1; i <= totalNodes; ++i) {
+        nodeMap[i] = new Node(i);
+    }
+    int flatIdx = 0;
+    for (int i = 1; i <= totalNodes; ++i) {
+        int count = neighborCounts[i - 1];
+        for (int j = 0; j < count; ++j) {
+            int neighborVal = flattenedNeighbors[flatIdx++];
+            if (neighborVal >= 1 && neighborVal <= totalNodes) {
+                nodeMap[i]->neighbors.push_back(nodeMap[neighborVal]);
+            }
+        }
+    }
+    return nodeMap[1];
+}
+\n`;
 
     let paramDeclarations = "";
     let streamInputs = "";
     let functionArgs = [];
 
     params.forEach((param) => {
-        paramDeclarations += `    ${param.type} ${param.name};\n`;
-        functionArgs.push(param.name);
-
-        if (param.type.startsWith("vector<vector")) {
+        if (param.type === "Node*") {
+            paramDeclarations += `    Node* ${param.name} = nullptr;\n`;
+            functionArgs.push(param.name);
+            streamInputs += `
+    int total_nodes_${param.name} = 0;
+    if (cin >> total_nodes_${param.name}) {
+        vector<int> counts_${param.name}(total_nodes_${param.name});
+        int total_edges_${param.name} = 0;
+        for (int i = 0; i < total_nodes_${param.name}; ++i) {
+            cin >> counts_${param.name}[i];
+            total_edges_${param.name} += counts_${param.name}[i];
+        }
+        vector<int> flat_neighbors_${param.name}(total_edges_${param.name});
+        for (int i = 0; i < total_edges_${param.name}; ++i) {
+            cin >> flat_neighbors_${param.name}[i];
+        }
+        ${param.name} = buildGraph(total_nodes_${param.name}, flat_neighbors_${param.name}, counts_${param.name});
+    }\n`;
+        } else if (param.type === "TreeNode*") {
+            paramDeclarations += `    TreeNode* ${param.name} = nullptr;\n`;
+            functionArgs.push(param.name);
+            streamInputs += `
+    int size_${param.name} = 0;
+    if (cin >> size_${param.name}) {
+        vector<int> temp_${param.name}(size_${param.name});
+        for (int i = 0; i < size_${param.name}; ++i) {
+            cin >> temp_${param.name}[i];
+        }
+        ${param.name} = buildTree(temp_${param.name});
+    }\n`;
+        } else if (param.type === "ListNode*") {
+            paramDeclarations += `    ListNode* ${param.name} = nullptr;\n`;
+            functionArgs.push(param.name);
+            streamInputs += `
+    int size_${param.name} = 0;
+    if (cin >> size_${param.name}) {
+        vector<int> temp_${param.name}(size_${param.name});
+        for (int i = 0; i < size_${param.name}; ++i) {
+            cin >> temp_${param.name}[i];
+        }
+        ${param.name} = buildList(temp_${param.name});
+    }\n`;
+        } else if (param.type.startsWith("vector<vector")) {
             const innerType = param.type.includes("char") ? "char" : "int";
+            paramDeclarations += `    ${param.type} ${param.name};\n`;
+            functionArgs.push(param.name);
             streamInputs += `
     int rows_${param.name} = 0, cols_${param.name} = 0;
     if (cin >> rows_${param.name} >> cols_${param.name}) {
@@ -98,6 +276,8 @@ const generateUniversalCppHarness = (userSolutionCode, problemDoc) => {
         }
     }\n`;
         } else if (param.type.startsWith("vector")) {
+            paramDeclarations += `    ${param.type} ${param.name};\n`;
+            functionArgs.push(param.name);
             streamInputs += `
     int size_${param.name} = 0;
     if (cin >> size_${param.name}) {
@@ -107,6 +287,8 @@ const generateUniversalCppHarness = (userSolutionCode, problemDoc) => {
         }
     }\n`;
         } else {
+            paramDeclarations += `    ${param.type} ${param.name};\n`;
+            functionArgs.push(param.name);
             streamInputs += `    cin >> ${param.name};\n`;
         }
     });
@@ -127,7 +309,80 @@ const generateUniversalCppHarness = (userSolutionCode, problemDoc) => {
     } else {
         functionCall = `${returnType} result = sol.${functionName}(${functionArgs.join(", ")});`;
         
-        if (returnType.startsWith("vector<vector")) {
+        if (returnType === "Node*") {
+            outputFormatter = `
+    cout << "[";
+    if (result != nullptr) {
+        map<int, vector<int>> adjList;
+        queue<Node*> q;
+        set<int> visited;
+        q.push(result);
+        visited.insert(result->val);
+        while (!q.empty()) {
+            Node* curr = q.front();
+            q.pop();
+            vector<int>& neighbors_list = adjList[curr->val];
+            for (Node* neighbor : curr->neighbors) {
+                neighbors_list.push_back(neighbor->val);
+                if (visited.find(neighbor->val) == visited.end()) {
+                    visited.insert(neighbor->val);
+                    q.push(neighbor);
+                }
+            }
+        }
+        bool firstRow = true;
+        for (auto const& [nodeVal, neighbors] : adjList) {
+            if (!firstRow) cout << ",";
+            cout << "[";
+            for (size_t i = 0; i < neighbors.size(); ++i) {
+                if (i > 0) cout << ",";
+                cout << neighbors[i];
+            }
+            cout << "]";
+            firstRow = false;
+        }
+    }
+    cout << "]";\n`;
+        } else if (returnType === "TreeNode*") {
+            outputFormatter = `
+    cout << "[";
+    if (result != nullptr) {
+        queue<TreeNode*> q;
+        q.push(result);
+        vector<string> nodes;
+        while (!q.empty()) {
+            TreeNode* curr = q.front();
+            q.pop();
+            if (curr != nullptr) {
+                nodes.push_back(to_string(curr->val));
+                q.push(curr->left);
+                q.push(curr->right);
+            } else {
+                nodes.push_back("null");
+            }
+        }
+        while (!nodes.empty() && nodes.back() == "null") {
+            nodes.pop_back();
+        }
+        for (size_t i = 0; i < nodes.size(); ++i) {
+            if (i > 0) cout << ",";
+            cout << nodes[i];
+        }
+    }
+    cout << "]";\n`;
+        } else if (returnType === "ListNode*") {
+            outputFormatter = `
+    cout << "[";
+    ListNode* curr = result;
+    bool first = true;
+    while (curr != nullptr) {
+        if (!first) cout << ",";
+        cout << curr->val;
+        first = false;
+        curr = curr->next;
+    }
+    cout << "]";\n`;
+        } else if (returnType.startsWith("vector<vector")) {
             outputFormatter = `
     cout << "[";
     for (size_t i = 0; i < result.size(); ++i) {

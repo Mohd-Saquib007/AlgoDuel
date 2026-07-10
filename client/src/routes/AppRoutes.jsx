@@ -11,46 +11,46 @@ import BattleQueue from "../pages/Battle/BattleQueue";
 import BattleFound from "../pages/Battle/BattleFound";
 import BattleRoom from "../pages/Battle/BattleRoom";
 import BattleResult from "../pages/Battle/BattleResult";
-import ProfilePage from "../pages/Profile/Profile"; // FIXED: Correct, clean page reference
+import ProfilePage from "../pages/Profile/Profile";
 import Contests from "../pages/Contest/Contests";
 import ContestDetails from "../pages/Contest/ContestDetails";
 import ContestWorkspace from "../pages/Contest/ContestWorkspace";
+
+// Import Layout Headers
+import Navbar from "../components/layout/Navbar";
+import Footer from "../components/layout/Footer";
+
+const MainLayout = ({ children }) => (
+  <div className="flex min-h-screen flex-col bg-[#1E1E1E]">
+    <Navbar />
+    <main className="flex-1 pt-6 md:pt-10">{children}</main>
+    <Footer />
+  </div>
+);
 
 function AppRoutes() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Landing */}
+        {/* Pages that DO NOT want Navbar/Footer (Landing, Auth, Code Workspace) */}
         <Route path="/" element={<LandingPage />} />
-
-        {/* Authentication */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-
-        {/* Dashboard */}
-        <Route path="/dashboard" element={<Dashboard />} />
-
-        {/* Problems */}
-        <Route path="/problems" element={<Problems />} />
-        <Route path="/problems/:id" element={<ProblemDetails />} />
-
-        {/* Practice Workspace - FIXED: Added dynamic URL parameter ':problemSlug' */}
         <Route path="/workspace/:problemSlug" element={<Workspace />} />
-
-        {/* Battles */}
-        <Route path="/battle" element={<BattleHome />} />
-        <Route path="/battle/queue" element={<BattleQueue />} />
-        <Route path="/battle/found" element={<BattleFound />} />
-        <Route path="/battle/room" element={<BattleRoom />} />
-        <Route path="/battle/result" element={<BattleResult />} />
-
-        {/* Profile - FIXED: Set element to look for ProfilePage component */}
-        <Route path="/profile" element={<ProfilePage />} />
-
-        {/* Contests */}
-        <Route path="/contests" element={<Contests />} />
-        <Route path="/contests/details" element={<ContestDetails />} />
         <Route path="/contests/workspace" element={<ContestWorkspace />} />
+
+        {/* Standard Pages wrapping MainLayout wrappers dynamically */}
+        <Route path="/dashboard" element={<MainLayout><Dashboard /></MainLayout>} />
+        <Route path="/problems" element={<MainLayout><Problems /></MainLayout>} />
+        <Route path="/problems/:id" element={<MainLayout><ProblemDetails /></MainLayout>} />
+        <Route path="/battle" element={<MainLayout><BattleHome /></MainLayout>} />
+        <Route path="/battle/queue" element={<MainLayout><BattleQueue /></MainLayout>} />
+        <Route path="/battle/found" element={<MainLayout><BattleFound /></MainLayout>} />
+        <Route path="/battle/room" element={<MainLayout><BattleRoom /></MainLayout>} />
+        <Route path="/battle/result" element={<MainLayout><BattleResult /></MainLayout>} />
+        <Route path="/profile" element={<MainLayout><ProfilePage /></MainLayout>} />
+        <Route path="/contests" element={<MainLayout><Contests /></MainLayout>} />
+        <Route path="/contests/details" element={<MainLayout><ContestDetails /></MainLayout>} />
       </Routes>
     </BrowserRouter>
   );
