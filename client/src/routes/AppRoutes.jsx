@@ -1,4 +1,6 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+
+// Pages
 import LandingPage from "../pages/Landing/LandingPage";
 import Login from "../pages/Auth/Login";
 import Register from "../pages/Auth/Register";
@@ -16,41 +18,70 @@ import Contests from "../pages/Contest/Contests";
 import ContestDetails from "../pages/Contest/ContestDetails";
 import ContestWorkspace from "../pages/Contest/ContestWorkspace";
 
-// Import Layout Headers
+// Structural Layout Helpers & Guard Gates
 import Navbar from "../components/layout/Navbar";
 import Footer from "../components/layout/Footer";
+import ProtectedRoute from "../components/auth/ProtectedRoute";
 
+// Standard Global Layout Layout Wrapper (Applies uniform header clear padding)
 const MainLayout = ({ children }) => (
   <div className="flex min-h-screen flex-col bg-[#1E1E1E]">
     <Navbar />
-    <main className="flex-1 pt-6 md:pt-10">{children}</main>
+    <main className="flex-1 pt-20">{children}</main>
     <Footer />
   </div>
 );
 
 function AppRoutes() {
+  const isLoggedIn = !!localStorage.getItem("token");
+
   return (
     <BrowserRouter>
       <Routes>
-        {/* Pages that DO NOT want Navbar/Footer (Landing, Auth, Code Workspace) */}
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/workspace/:problemSlug" element={<Workspace />} />
-        <Route path="/contests/workspace" element={<ContestWorkspace />} />
+        
+        {/* PUBLIC GUEST ROUTES (No Navbar/Footer Wrapper conflicts) */}
+        <Route 
+          path="/" 
+          element={
+            <div className="flex min-h-screen flex-col bg-[#1E1E1E]">
+              <Navbar />
+              <main className="flex-1 pt-20"><LandingPage /></main>
+              <Footer />
+            </div>
+          } 
+        />
+        
+        <Route 
+          path="/login" 
+          element={isLoggedIn ? <Navigate to="/dashboard" replace /> : <Login />} 
+        />
+        <Route 
+          path="/register" 
+          element={isLoggedIn ? <Navigate to="/dashboard" replace /> : <Register />} 
+        />
 
-        {/* Standard Pages wrapping MainLayout wrappers dynamically */}
-        <Route path="/dashboard" element={<MainLayout><Dashboard /></MainLayout>} />
-        <Route path="/problems" element={<MainLayout><Problems /></MainLayout>} />
-        <Route path="/problems/:id" element={<MainLayout><ProblemDetails /></MainLayout>} />
-        <Route path="/battle" element={<MainLayout><BattleHome /></MainLayout>} />
-        <Route path="/battle/queue" element={<MainLayout><BattleQueue /></MainLayout>} />
-        <Route path="/battle/found" element={<MainLayout><BattleFound /></MainLayout>} />
-        <Route path="/battle/room" element={<MainLayout><BattleRoom /></MainLayout>} />
-        <Route path="/battle/result" element={<MainLayout><BattleResult /></MainLayout>} />
-        <Route path="/profile" element={<MainLayout><ProfilePage /></MainLayout>} />
-        <Route path="/contests" element={<MainLayout><Contests /></MainLayout>} />
-        <Route path="/contests/details" element={<MainLayout><ContestDetails /></MainLayout>} />
+        {/* SECURE PROTECTED ARENA ENCLAVES (Guarded via ProtectedRoute + MainLayout) */}
+        <Route path="/dashboard" element={<ProtectedRoute><MainLayout><Dashboard /></MainLayout></ProtectedRoute>} />
+        <Route path="/problems" element={<ProtectedRoute><MainLayout><Problems /></MainLayout></ProtectedRoute>} />
+        <Route path="/problems/:id" element={<ProtectedRoute><MainLayout><ProblemDetails /></MainLayout></ProtectedRoute>} />
+        
+        <Route path="/battle" element={<ProtectedRoute><MainLayout><BattleHome /></MainLayout></ProtectedRoute>} />
+        <Route path="/battle/queue" element={<ProtectedRoute><MainLayout><BattleQueue /></MainLayout></ProtectedRoute>} />
+        <Route path="/battle/found" element={<ProtectedRoute><MainLayout><BattleFound /></MainLayout></ProtectedRoute>} />
+        <Route path="/battle/room" element={<ProtectedRoute><MainLayout><BattleRoom /></MainLayout></ProtectedRoute>} />
+        <Route path="/battle/result" element={<ProtectedRoute><MainLayout><BattleResult /></MainLayout></ProtectedRoute>} />
+        
+        <Route path="/profile" element={<ProtectedRoute><MainLayout><ProfilePage /></MainLayout></ProtectedRoute>} />
+        
+        <Route path="/contests" element={<ProtectedRoute><MainLayout><Contests /></MainLayout></ProtectedRoute>} />
+        <Route path="/contests/details" element={<ProtectedRoute><MainLayout><ContestDetails /></MainLayout></ProtectedRoute>} />
+
+        {/* LIVE WORKSPACE ISOLATION TIERS (No Navbars or Footers permitted inside editor shells) */}
+        <Route path="/workspace/:problemSlug" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
+        <Route path="/contests/workspace" element={<ProtectedRoute><ContestWorkspace /></ProtectedRoute>} />
+
+        {/* Global Fallback Catch */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

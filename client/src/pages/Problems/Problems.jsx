@@ -72,7 +72,7 @@ function Problems() {
       <div className="mx-auto max-w-7xl">
         
         {/* Banner Section Header */}
-        <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-gradient-to-br from-[#252526] to-[#141414] p-8 md:p-12 shadow-2xl">
+        <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-gradient-to-br' from-[#252526] to-[#141414] p-8 md:p-12 shadow-2xl">
           <div className="relative z-10 max-w-2xl">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-[#A3FF12]/10 px-3 py-1 text-xs font-semibold text-[#A3FF12] uppercase tracking-wider">
               <Flame size={12} /> Live Coding Arena
